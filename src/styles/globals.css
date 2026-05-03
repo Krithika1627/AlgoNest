@@ -1,0 +1,99 @@
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-0: #0b1020;
+  --bg-1: #10172b;
+  --bg-2: #1d2340;
+  --accent-1: #8be9fd;
+  --accent-2: #f4d06f;
+  --accent-3: #ff7ab6;
+  --text-strong: #f8fafc;
+  --text-muted: #a9b2c7;
+  --card: rgba(20, 26, 46, 0.75);
+  --border: rgba(148, 163, 184, 0.2);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 360px;
+  min-height: 560px;
+}
+
+body {
+  margin: 0;
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  color: var(--text-strong);
+  background: radial-gradient(120% 120% at 20% 0%, #17203d 0%, #0b1020 55%, #05070e 100%);
+}
+
+#root {
+  display: flex;
+  min-height: 100%;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(6, 10, 28, 0.55);
+  backdrop-filter: blur(18px);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+.tag {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.progress-track {
+  height: 4px;
+  background: rgba(148, 163, 184, 0.2);
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-1), var(--accent-3));
+  animation: countdown linear forwards;
+}
+
+@keyframes countdown {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+.fade-in {
+  animation: fadeInUp 420ms ease both;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0px);
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "AlgoNest",
+  "version": "1.0.0",
+  "description": "Auto-commit your LeetCode solutions to GitHub",
+  "permissions": [
+    "identity",
+    "storage",
+    "alarms",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://api.github.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["src/content/content-script.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_icon": "icons/icon48.png"
+  },
+  "oauth2": {
+    "client_id": "__VITE_GITHUB_OAUTH_CLIENT_ID__",
+    "scopes": ["repo", "user:email"]
+  }
+}
