@@ -19,12 +19,14 @@ const STORAGE_KEYS = {
   pending: "pending_submission",
   queue: "submission_queue",
   hashes: "code_hashes",
-  authError: "auth_error"
+  authError: "auth_error",
+  lastSubmission: "last_submission"
 } as const;
 
 const EXT_MAP: Record<string, string> = {
   python: "py",
   cpp: "cpp",
+  c: "c",
   java: "java",
   javascript: "js",
   typescript: "ts",
@@ -32,8 +34,36 @@ const EXT_MAP: Record<string, string> = {
   cs: "cs",
   kt: "kt",
   swift: "swift",
-  rust: "rs"
+  rust: "rs",
+  ruby: "rb",
+  php: "php",
+  scala: "scala",
+  dart: "dart",
+  r: "r",
+  sql: "sql",
+  sh: "sh",
+  objectivec: "m",
+  objectivecpp: "mm",
+  fsharp: "fs",
+  ocaml: "ml",
+  haskell: "hs",
+  lua: "lua",
+  perl: "pl"
 };
+
+function openPopupWindow(): void {
+  chrome.windows.create(
+    {
+      url: chrome.runtime.getURL("src/popup/index.html"),
+      type: "popup",
+      width: 380,
+      height: 600
+    },
+    () => {
+      void chrome.runtime.lastError;
+    }
+  );
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create("queue-flush", { periodInMinutes: 5 });
@@ -55,6 +85,7 @@ chrome.runtime.onMessage.addListener(
     _sender: chrome.runtime.MessageSender,
     sendResponse: (response?: unknown) => void
   ) => {
+    console.log("📥 MESSAGE RECEIVED:", message);
     if (message.type === "SUBMISSION_DETECTED") {
       handleSubmission(message.payload as SubmissionPayload).then(sendResponse);
       return true;
@@ -128,6 +159,7 @@ export async function saveSettings(settings: UserSettings): Promise<UserSettings
 
 export async function handleSubmission(payload: SubmissionPayload): Promise<CommitResult> {
   try {
+    console.info("AlgoNest: handleSubmission", payload.problem_slug, payload.submission_id);
     const settings = await getSettings();
     if (!settings.github_token || !settings.repo_full_name) {
       return { status: "error", message: "Not configured" };
@@ -139,23 +171,44 @@ export async function handleSubmission(payload: SubmissionPayload): Promise<Comm
       timestamp: payload.timestamp ?? new Date().toISOString()
     };
 
+    if (normalizedPayload.notes === undefined) {
+      const isDuplicate = await isDuplicateSubmission(normalizedPayload);
+      if (isDuplicate) {
+        return { status: "skipped", message: "Duplicate submission" };
+      }
+    }
+
+    if (normalizedPayload.notes !== undefined) {
+      await removeStorage(STORAGE_KEYS.pending);
+      await markLastSubmission(normalizedPayload);
+    }
+
     if (!settings.silent_mode && normalizedPayload.notes === undefined) {
+      const pending = await getFromStorage<SubmissionPayload>(STORAGE_KEYS.pending);
+      if (pending && getSubmissionKey(pending) === getSubmissionKey(normalizedPayload)) {
+        return { status: "queued", message: "Already pending" };
+      }
       await setStorage({ [STORAGE_KEYS.pending]: normalizedPayload });
       try {
         chrome.action.openPopup(() => {
-          void chrome.runtime.lastError;
+          if (chrome.runtime.lastError) {
+            openPopupWindow();
+          }
         });
       } catch {
-        // ignore popup errors
+        openPopupWindow();
       }
       return { status: "queued", message: "Waiting for popup" };
     }
 
     try {
-      return await commitSolution(normalizedPayload, settings);
+      const result = await commitSolution(normalizedPayload, settings);
+      console.info("AlgoNest: commit result", result.status, result.file_path);
+      return result;
     } catch (err) {
       if (isRetryableError(err)) {
         await enqueue(normalizedPayload);
+        console.warn("AlgoNest: queued for retry", err);
         return { status: "queued", message: "Queued for retry" };
       }
       if (err instanceof AuthError) {
@@ -180,6 +233,7 @@ async function commitSolution(
   settings: UserSettings
 ): Promise<CommitResult> {
   if (payload.action === "skip") {
+    await markLastSubmission(payload);
     return { status: "skipped", message: "Skipped by user" };
   }
 
@@ -258,6 +312,7 @@ async function commitSolution(
   }
 
   await storeHash(slug, codeHash);
+  await markLastSubmission(payload);
 
   return {
     status: payload.action === "version" ? "versioned" : "committed",
@@ -267,6 +322,38 @@ async function commitSolution(
     commit_message: message,
     version
   };
+}
+
+function getSubmissionKey(payload: SubmissionPayload): string {
+  const id = payload.submission_id?.trim();
+  if (id) {
+    return id;
+  }
+  return `${payload.problem_slug}:${payload.timestamp}`;
+}
+
+async function isDuplicateSubmission(payload: SubmissionPayload): Promise<boolean> {
+  const last = await getFromStorage<{ key: string; at: string }>(STORAGE_KEYS.lastSubmission);
+  if (!last) {
+    return false;
+  }
+  if (last.key !== getSubmissionKey(payload)) {
+    return false;
+  }
+  const lastAt = new Date(last.at).getTime();
+  if (Number.isNaN(lastAt)) {
+    return false;
+  }
+  return Date.now() - lastAt < 60000;
+}
+
+async function markLastSubmission(payload: SubmissionPayload): Promise<void> {
+  await setStorage({
+    [STORAGE_KEYS.lastSubmission]: {
+      key: getSubmissionKey(payload),
+      at: new Date().toISOString()
+    }
+  });
 }
 
 async function getNextVersion(
@@ -371,8 +458,19 @@ function generateMarkdown(
   const slug = payload.problem_slug;
   const ext = EXT_MAP[payload.language] ?? payload.language;
   const fence = "```";
+  const approach = payload.notes?.trim()
+    ? payload.notes
+    : "<!-- add your approach here -->";
+  const formatMetric = (value: unknown, unit: string): string => {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      return `${value} ${unit}`;
+    }
+    return "N/A";
+  };
+  const runtimeLabel = formatMetric(payload.runtime_ms, "ms");
+  const memoryLabel = formatMetric(payload.memory_mb, "MB");
 
-  return `---\n# ${payload.problem_title}\n\n**Difficulty:** ${payload.difficulty} | **Topic:** ${topic} | **Language:** ${payload.language}  \n**Solved:** ${date}  \n**LeetCode:** https://leetcode.com/problems/${slug}/\n\n## Approach\n${payload.notes ?? "<!-- add your approach here -->"}\n\n## Complexity\n- Time: <!-- e.g. O(n) -->\n- Space: <!-- e.g. O(1) -->\n\n## Solution\n${fence}${ext}\n${payload.code}\n${fence}\n\n## Runtime & Memory\n- Runtime: ${payload.runtime_ms} ms\n- Memory: ${payload.memory_mb} MB\n\n## Mistakes & Notes\n<!-- use this section for post-solve reflections -->\n\n## Related Problems\n<!-- links to similar problems will be added in Part 2 -->\n---\n`;
+  return `# ${payload.problem_title}\n\n**Difficulty:** ${payload.difficulty} | **Topic:** ${topic} | **Language:** ${payload.language}  \n**Solved:** ${date}  \n**LeetCode:** https://leetcode.com/problems/${slug}/\n\n## Approach\n${approach}\n\n## Complexity\n- Time: <!-- e.g. O(n) -->\n- Space: <!-- e.g. O(1) -->\n\n## Solution\n${fence}${ext}\n${payload.code}\n${fence}\n\n## Runtime & Memory\n- Runtime: ${runtimeLabel}\n- Memory: ${memoryLabel}\n\n## Mistakes & Notes\n<!-- use this section for post-solve reflections -->\n\n## Related Problems\n<!-- links to similar problems will be added in Part 2 -->\n`;
 }
 
 function isRetryableError(err: unknown): boolean {

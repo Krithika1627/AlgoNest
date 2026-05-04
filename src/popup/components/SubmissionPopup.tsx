@@ -45,34 +45,63 @@ export default function SubmissionPopup({ pending, settings }: Props): JSX.Eleme
 
   const handleSave = async () => {
     setLoading(true);
+    const trimmedNotes = notes.trim();
     const payload: SubmissionPayload = {
       ...pending,
-      notes: notes.trim() || undefined,
+      notes: trimmedNotes,
       action
     };
 
-    await chrome.storage.local.set({ pending_submission: null });
+    let result: CommitResult | undefined;
 
-    const result = await sendMessage<CommitResult>({
-      type: "POPUP_RESPONSE",
-      payload
-    });
+    try {
+      await new Promise<void>((resolve) => {
+        chrome.storage.local.set({ pending_submission: null }, () => resolve());
+      });
 
-    setLoading(false);
-    setPendingSubmission(null);
-    setScreen("main");
+      result = await sendMessage<CommitResult>({
+        type: "POPUP_RESPONSE",
+        payload
+      });
+    } catch (err) {
+      console.warn("Commit failed", err);
+      setToast({ message: "Commit failed. Check service worker logs.", type: "error" });
+    } finally {
+      setLoading(false);
+      setPendingSubmission(null);
+      setScreen("main");
+    }
 
-    if (result?.status === "committed" || result?.status === "versioned") {
+    if (!result) {
+      setToast({ message: "Commit failed. No response from service worker.", type: "error" });
+      return;
+    }
+
+    if (result.status === "committed" || result.status === "versioned") {
       setToast({ message: "Committed to GitHub.", type: "success" });
-    } else if (result?.status === "queued") {
+      window.setTimeout(() => window.close(), 500);
+    } else if (result.status === "queued") {
       setToast({ message: "Queued for retry.", type: "success" });
+      window.setTimeout(() => window.close(), 500);
+    } else if (result.status === "skipped") {
+      setToast({ message: "Submission skipped.", type: "success" });
+      window.setTimeout(() => window.close(), 500);
     } else {
-      setToast({ message: result?.message ?? "Commit failed.", type: "error" });
+      setToast({ message: result.message ?? "Commit failed.", type: "error" });
     }
   };
 
   const handleSkip = async () => {
+    const payload: SubmissionPayload = {
+      ...pending,
+      notes: "",
+      action: "skip"
+    };
     await chrome.storage.local.set({ pending_submission: null });
+    await sendMessage<CommitResult>({
+      type: "POPUP_RESPONSE",
+      payload
+    });
     setPendingSubmission(null);
     setScreen("main");
     window.close();

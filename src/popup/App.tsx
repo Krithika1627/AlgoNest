@@ -50,7 +50,7 @@ export default function App(): JSX.Element {
   }, [setPendingSubmission, setQueueCount, setSettings, setToast]);
 
   useEffect(() => {
-    if (!settings?.github_token) {
+    if (!settings?.github_token || !settings.repo_full_name) {
       setScreen("setup");
     } else if (pendingSubmission) {
       setScreen("popup");

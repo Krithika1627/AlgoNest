@@ -39,4 +39,6 @@ export interface CommitResult {
   commit_message?: string;
   version?: number;
   message?: string;
+  showModal?: boolean;
+  payload?: SubmissionPayload;
 }

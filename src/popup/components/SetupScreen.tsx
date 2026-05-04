@@ -20,6 +20,7 @@ export default function SetupScreen(): JSX.Element {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [needsCreate, setNeedsCreate] = useState(false);
   const baseSettings = settings ?? DEFAULT_SETTINGS;
+  const repoReady = repoInput.trim().length > 0;
 
   const hasToken = Boolean(settings?.github_token);
 
@@ -116,6 +117,10 @@ export default function SetupScreen(): JSX.Element {
     if (!baseSettings.github_token) {
       return;
     }
+    if (!repoInput.trim()) {
+      setToast({ message: "Enter a repo name first.", type: "error" });
+      return;
+    }
     setLoading(true);
     try {
       const currentUser = await getAuthenticatedUser(baseSettings.github_token);
@@ -133,23 +138,31 @@ export default function SetupScreen(): JSX.Element {
     }
   };
 
+  const disconnectAccount = async () => {
+    await saveSettings({ ...DEFAULT_SETTINGS });
+    setUser(null);
+    setRepoInput("");
+    setNeedsCreate(false);
+    setToast({ message: "Disconnected GitHub account.", type: "success" });
+  };
+
   return (
     <div className="card fade-in flex flex-1 flex-col gap-4 p-4">
       <div>
         <h2 className="text-xl font-semibold">Connect your GitHub</h2>
         <p className="text-sm text-slate-300">
-          AlgoNest runs fully in the extension. Use OAuth or paste a token for now.
+          AlgoNest runs fully in the extension. Paste a token to connect first.
         </p>
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-        <div className="text-sm font-medium">OAuth (coming soon)</div>
+        <div className="text-sm font-medium">OAuth (disabled for now)</div>
         <p className="text-xs text-slate-300">
           OAuth exchange needs a tiny proxy. Click to capture the code.
         </p>
         <button
-          onClick={handleOAuth}
-          className="mt-3 rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold"
+          disabled
+          className="mt-3 cursor-not-allowed rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-400"
         >
           Connect GitHub
         </button>
@@ -195,27 +208,48 @@ export default function SetupScreen(): JSX.Element {
             <label className="text-xs uppercase text-slate-400">Repository</label>
             <input
               value={repoInput}
-              onChange={(event) => setRepoInput(event.target.value)}
+              onChange={(event) => {
+                setRepoInput(event.target.value);
+                setNeedsCreate(false);
+              }}
               placeholder="username/leetcode-solutions"
               className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
             />
             <div className="mt-3 flex gap-2">
               <button
                 onClick={connectRepo}
-                className="flex-1 rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-sm font-semibold"
+                disabled={!repoReady}
+                className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold ${
+                  repoReady
+                    ? "border border-white/20 bg-white/5"
+                    : "cursor-not-allowed border border-white/10 bg-white/5 text-slate-400"
+                }`}
               >
                 Connect repo
               </button>
-              {needsCreate && (
-                <button
-                  onClick={createRepoFromInput}
-                  className="flex-1 rounded-xl bg-indigo-400/80 px-3 py-2 text-sm font-semibold text-slate-900"
-                >
-                  Create repo
-                </button>
-              )}
+              <button
+                onClick={createRepoFromInput}
+                className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold ${
+                  repoReady
+                    ? "bg-indigo-400/80 text-slate-900"
+                    : "cursor-not-allowed bg-white/5 text-slate-400"
+                }`}
+              >
+                Create repo
+              </button>
             </div>
+            {needsCreate && (
+              <div className="mt-2 text-xs text-amber-200">
+                Repo not found. Create it to continue.
+              </div>
+            )}
           </div>
+          <button
+            onClick={disconnectAccount}
+            className="mt-4 w-full rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-100"
+          >
+            Disconnect account
+          </button>
         </div>
       )}
     </div>

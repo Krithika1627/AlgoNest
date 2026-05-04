@@ -7,7 +7,8 @@
     "identity",
     "storage",
     "alarms",
-    "scripting"
+    "scripting",
+    "windows"
   ],
   "host_permissions": [
     "https://leetcode.com/*",
@@ -22,6 +23,12 @@
       "matches": ["https://leetcode.com/problems/*"],
       "js": ["src/content/content-script.ts"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/injector.js"],
+      "matches": ["https://leetcode.com/*"]
     }
   ],
   "action": {

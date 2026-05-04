@@ -1,30 +1,74 @@
 import type { SubmissionPayload } from "../shared/types";
 
 const DEFAULT_DEBOUNCE_MS = 3000;
+const ALGONEST_SOURCE = "algonest";
+const ACCEPTED_COOLDOWN_MS = 15000;
+const SUBMIT_ARM_WINDOW_MS = 5 * 60 * 1000;
 let debounceMs = DEFAULT_DEBOUNCE_MS;
 let lastSubmissionId = "";
 let lastSentAt = 0;
 let debounceTimer: number | undefined;
+let lastAcceptedSlug = "";
+let lastAcceptedAt = 0;
+let lastDetectedSlug = "";
+let lastDetectedAt = 0;
+let submitArmed = false;
+let submitArmedAt = 0;
+let hasSentForSubmit = false;
+let lastHandledSlug = "";
 
 function normalizeLanguage(raw: string): string {
   const value = raw.trim().toLowerCase();
+  const cleaned = value.replace(/\([^)]*\)/g, "").trim();
+  const compact = cleaned.replace(/[\s-]+/g, "");
   const map: Record<string, string> = {
     python3: "python",
     python: "python",
+    py: "python",
+    "python2": "python",
+    "python 3": "python",
     cpp: "cpp",
+    "c++": "cpp",
+    cplusplus: "cpp",
     c: "c",
     java: "java",
     javascript: "javascript",
+    js: "javascript",
     typescript: "typescript",
+    ts: "typescript",
     golang: "go",
     go: "go",
     csharp: "cs",
     "c#": "cs",
+    "csharp.net": "cs",
     kotlin: "kt",
     swift: "swift",
-    rust: "rust"
+    rust: "rust",
+    rustlang: "rust",
+    ruby: "ruby",
+    php: "php",
+    scala: "scala",
+    dart: "dart",
+    r: "r",
+    mysql: "sql",
+    mssql: "sql",
+    postgres: "sql",
+    postgresql: "sql",
+    bash: "sh",
+    shell: "sh",
+    zsh: "sh",
+    "objective-c": "objectivec",
+    objectivec: "objectivec",
+    "objective-c++": "objectivecpp",
+    objectivecpp: "objectivecpp",
+    "f#": "fsharp",
+    fsharp: "fsharp",
+    ocaml: "ocaml",
+    haskell: "haskell",
+    lua: "lua",
+    perl: "perl"
   };
-  return map[value] ?? value;
+  return map[cleaned] ?? map[compact] ?? map[value] ?? cleaned;
 }
 
 function normalizeDifficulty(raw: string | null | undefined): "Easy" | "Medium" | "Hard" {
@@ -116,6 +160,12 @@ function getLanguageFromDom(): string {
   return languageButton?.textContent ? normalizeLanguage(languageButton.textContent) : "";
 }
 
+function getMetricFromText(regex: RegExp): string {
+  const text = document.body.innerText;
+  const match = text.match(regex);
+  return match ? match[1] : "";
+}
+
 function getMetricFromDom(label: string): string {
   const nodes = Array.from(document.querySelectorAll("span, div, p"));
   const target = nodes.find((node) => node.textContent?.includes(label));
@@ -123,11 +173,19 @@ function getMetricFromDom(label: string): string {
 }
 
 function getRuntimeFromDom(): number {
-  return parseNumber(getMetricFromDom("Runtime"));
+  const byLabel = parseNumber(getMetricFromDom("Runtime"));
+  if (byLabel > 0) {
+    return byLabel;
+  }
+  return parseNumber(getMetricFromText(/Runtime\s*:?\s*([\d.]+)\s*ms/i));
 }
 
 function getMemoryFromDom(): number {
-  return parseNumber(getMetricFromDom("Memory"));
+  const byLabel = parseNumber(getMetricFromDom("Memory"));
+  if (byLabel > 0) {
+    return byLabel;
+  }
+  return parseNumber(getMetricFromText(/Memory\s*:?\s*([\d.]+)\s*MB/i));
 }
 
 function getCodeFromDom(): string {
@@ -136,6 +194,10 @@ function getCodeFromDom(): string {
     const textarea = document.querySelector("textarea");
     if (textarea instanceof HTMLTextAreaElement) {
       return textarea.value;
+    }
+    const preCode = document.querySelector("pre code");
+    if (preCode?.textContent) {
+      return preCode.textContent;
     }
     return "";
   }
@@ -170,6 +232,15 @@ function extractSubmissionFromGraphQL(raw: unknown): Partial<SubmissionPayload> 
     (data as { question?: unknown }).question ??
     {};
 
+  const langValue =
+    (submission as { lang?: { name?: string; verboseName?: string } | string }).lang ??
+    (submission as { language?: string }).language ??
+    "";
+  const language =
+    typeof langValue === "string"
+      ? langValue
+      : langValue?.name ?? langValue?.verboseName ?? "";
+
   return {
     submission_id: String(
       (submission as { submissionId?: string; submission_id?: string; id?: string }).submissionId ??
@@ -178,24 +249,21 @@ function extractSubmissionFromGraphQL(raw: unknown): Partial<SubmissionPayload> 
         ""
     ),
     code: String((submission as { code?: string }).code ?? ""),
-    language: normalizeLanguage(
-      String(
-        (submission as { lang?: string; language?: string }).lang ??
-          (submission as { language?: string }).language ??
-          ""
-      )
-    ),
+    language: normalizeLanguage(String(language)),
     runtime_ms: parseNumber(
-      (submission as { runtime?: string | number; runtimeDisplay?: string }).runtime ??
-        (submission as { runtimeDisplay?: string }).runtimeDisplay ??
+      (submission as { runtimeDisplay?: string; runtime?: string | number }).runtimeDisplay ??
+        (submission as { runtime?: string | number }).runtime ??
         ""
     ),
     memory_mb: parseNumber(
-      (submission as { memory?: string | number; memoryDisplay?: string }).memory ??
-        (submission as { memoryDisplay?: string }).memoryDisplay ??
+      (submission as { memoryDisplay?: string; memory?: string | number }).memoryDisplay ??
+        (submission as { memory?: string | number }).memory ??
         ""
     ),
-    tags: extractTags((question as { topicTags?: unknown }).topicTags),
+    tags: extractTags(
+      (submission as { topicTags?: unknown }).topicTags ??
+        (question as { topicTags?: unknown }).topicTags
+    ),
     problem_title: String((question as { title?: string }).title ?? ""),
     problem_slug: String((question as { titleSlug?: string }).titleSlug ?? ""),
     difficulty: normalizeDifficulty(String((question as { difficulty?: string }).difficulty ?? "")),
@@ -208,8 +276,8 @@ function buildPayload(partial: Partial<SubmissionPayload>): SubmissionPayload | 
   const title = partial.problem_title?.trim() || getTitleFromDom();
   const difficulty = normalizeDifficulty(partial.difficulty ?? getDifficultyFromDom());
   const language = partial.language?.trim() || getLanguageFromDom();
-  const runtime = partial.runtime_ms ?? getRuntimeFromDom();
-  const memory = partial.memory_mb ?? getMemoryFromDom();
+  const runtime = partial.runtime_ms && partial.runtime_ms > 0 ? partial.runtime_ms : getRuntimeFromDom();
+  const memory = partial.memory_mb && partial.memory_mb > 0 ? partial.memory_mb : getMemoryFromDom();
   const submissionId = partial.submission_id?.trim() || `${Date.now()}`;
   const code = partial.code?.length ? partial.code : getCodeFromDom();
 
@@ -234,7 +302,34 @@ function buildPayload(partial: Partial<SubmissionPayload>): SubmissionPayload | 
 
 function scheduleSend(payload: SubmissionPayload): void {
   const now = Date.now();
-  if (payload.submission_id === lastSubmissionId && now - lastSentAt < debounceMs) {
+  const incomingId = payload.submission_id?.trim() ?? "";
+  if (incomingId && incomingId !== lastSubmissionId) {
+    submitArmed = true;
+    submitArmedAt = now;
+    hasSentForSubmit = false;
+    lastHandledSlug = "";
+  }
+  if (!submitArmed) {
+    return;
+  }
+  if (submitArmedAt && now - submitArmedAt > SUBMIT_ARM_WINDOW_MS) {
+    submitArmed = false;
+    return;
+  }
+  if (hasSentForSubmit) {
+    return;
+  }
+  if (payload.problem_slug === lastHandledSlug) {
+    return;
+  }
+  if (incomingId && incomingId === lastSubmissionId) {
+    return;
+  }
+  if (now - lastSentAt < debounceMs) {
+    return;
+  }
+
+  if (payload.problem_slug === lastAcceptedSlug && now - lastAcceptedAt < ACCEPTED_COOLDOWN_MS) {
     return;
   }
 
@@ -245,9 +340,18 @@ function scheduleSend(payload: SubmissionPayload): void {
   debounceTimer = window.setTimeout(() => {
     lastSubmissionId = payload.submission_id;
     lastSentAt = Date.now();
-    chrome.runtime.sendMessage({ type: "SUBMISSION_DETECTED", payload }, () => {
-      void chrome.runtime.lastError;
-    });
+    lastAcceptedSlug = payload.problem_slug;
+    lastAcceptedAt = lastSentAt;
+    hasSentForSubmit = true;
+    lastHandledSlug = payload.problem_slug;
+    try {
+      console.info("AlgoNest: submission detected", payload.problem_slug);
+      chrome.runtime.sendMessage({ type: "SUBMISSION_DETECTED", payload }, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch {
+      // ignore context invalidated
+    }
   }, debounceMs);
 }
 
@@ -257,67 +361,89 @@ function handleGraphQLPayload(raw: unknown): void {
     return;
   }
 
+  if (extracted.submission_id && extracted.submission_id !== lastSubmissionId) {
+    submitArmed = true;
+    submitArmedAt = Date.now();
+    hasSentForSubmit = false;
+    lastHandledSlug = "";
+  }
+
   const payload = buildPayload(extracted);
   if (payload) {
     scheduleSend(payload);
   }
 }
 
-function interceptFetch(): void {
-  const originalFetch = window.fetch.bind(window);
-  window.fetch = async (...args) => {
-    const response = await originalFetch(...args);
-    const url = typeof args[0] === "string" ? args[0] : args[0]?.url;
-
-    if (url && url.includes("/graphql")) {
-      response
-        .clone()
-        .json()
-        .then((data) => handleGraphQLPayload(data))
-        .catch(() => null);
-    }
-
-    return response;
+function injectNetworkInterceptor(): void {
+  if (document.querySelector("script[data-algonest-injector='true']")) {
+    return;
+  }
+  const script = document.createElement("script");
+  script.src = chrome.runtime.getURL("src/injector.js");
+  script.type = "text/javascript";
+  script.async = true;
+  script.dataset.algonestInjector = "true";
+  script.onerror = () => {
+    console.warn("AlgoNest: injector failed to load");
   };
+  script.onload = () => script.remove();
+  (document.documentElement || document.head || document.body).appendChild(script);
 }
 
-function interceptXHR(): void {
-  const originalOpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function open(...args) {
-    const url = args[1];
-    (this as XMLHttpRequest & { _algonestUrl?: string })._algonestUrl = String(url);
-    return originalOpen.apply(this, args as Parameters<typeof originalOpen>);
-  };
+function listenForGraphQLMessages(): void {
+  window.addEventListener("message", (event) => {
+    if (event.source !== window) {
+      return;
+    }
+    const data = event.data as { source?: string; type?: string; payload?: unknown } | null;
+    if (!data || data.source !== ALGONEST_SOURCE || data.type !== "GRAPHQL_RESPONSE") {
+      return;
+    }
+    handleGraphQLPayload(data.payload);
+  });
+}
 
-  const originalSend = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.send = function send(...args) {
-    this.addEventListener("load", () => {
-      const url = (this as XMLHttpRequest & { _algonestUrl?: string })._algonestUrl;
-      if (url && url.includes("/graphql")) {
-        try {
-          const data = JSON.parse(this.responseText);
-          handleGraphQLPayload(data);
-        } catch {
-          // ignore
-        }
-      }
-    });
-    return originalSend.apply(this, args as Parameters<typeof originalSend>);
-  };
+function findAcceptedBadge(): HTMLElement | null {
+  const nodes = Array.from(document.querySelectorAll("span, div, p"));
+  for (const node of nodes) {
+    const text = node.textContent?.trim();
+    if (text !== "Accepted") {
+      continue;
+    }
+    const el = node as HTMLElement;
+    const className = String(el.className || "").toLowerCase();
+    if (className.includes("success") || className.includes("green")) {
+      return el;
+    }
+    if (el.closest("div[role='dialog'], div[data-e2e-locator*='submission'], div[class*='result']")) {
+      return el;
+    }
+  }
+  return null;
 }
 
 function setupMutationObserver(): void {
   const observer = new MutationObserver(() => {
-    const acceptedBadge = Array.from(document.querySelectorAll("span, div"))
-      .filter((node) => node.textContent?.trim() === "Accepted")
-      .find((node) => (node as HTMLElement).className.toLowerCase().includes("success"));
+    const acceptedBadge = findAcceptedBadge();
 
     if (!acceptedBadge) {
       return;
     }
+    const now = Date.now();
+    const slug = getSlugFromUrl();
+    if (slug === lastDetectedSlug && now - lastDetectedAt < ACCEPTED_COOLDOWN_MS) {
+      return;
+    }
+    lastDetectedSlug = slug;
+    lastDetectedAt = now;
+    submitArmed = true;
+    submitArmedAt = now;
+    hasSentForSubmit = false;
+    lastHandledSlug = "";
+    console.info("AlgoNest: accepted badge detected in DOM");
 
     const payload = buildPayload({
-      problem_slug: getSlugFromUrl(),
+      problem_slug: slug,
       problem_title: getTitleFromDom(),
       difficulty: normalizeDifficulty(getDifficultyFromDom()),
       language: getLanguageFromDom(),
@@ -337,38 +463,82 @@ function setupMutationObserver(): void {
 }
 
 function loadDebounceMs(): void {
-  chrome.storage.local.get(["settings"], (result) => {
-    const settings = result.settings as { debounce_ms?: number } | undefined;
-    if (settings?.debounce_ms) {
-      debounceMs = settings.debounce_ms;
-    }
-  });
+  try {
+    chrome.storage.local.get(["settings"], (result) => {
+      const settings = result.settings as { debounce_ms?: number } | undefined;
+      if (settings?.debounce_ms) {
+        debounceMs = settings.debounce_ms;
+      }
+    });
 
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "local" || !changes.settings?.newValue) {
-      return;
-    }
-    const next = changes.settings.newValue as { debounce_ms?: number };
-    if (next.debounce_ms) {
-      debounceMs = next.debounce_ms;
-    }
-  });
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== "local" || !changes.settings?.newValue) {
+        return;
+      }
+      const next = changes.settings.newValue as { debounce_ms?: number };
+      if (next.debounce_ms) {
+        debounceMs = next.debounce_ms;
+      }
+    });
+  } catch {
+    // ignore context invalidated
+  }
 }
 
 function startKeepAlivePing(): void {
   window.setInterval(() => {
-    chrome.runtime.sendMessage({ type: "PING" }, () => {
-      void chrome.runtime.lastError;
-    });
+    try {
+      chrome.runtime.sendMessage({ type: "PING" }, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch {
+      // ignore context invalidated
+    }
   }, 20000);
+}
+
+function setupSubmitClickListener(): void {
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target as Element | null;
+      const button = target?.closest("button, [role='button']");
+      if (!button) {
+        return;
+      }
+      const text = button.textContent?.trim().toLowerCase() ?? "";
+      const isSubmitButton =
+        button.getAttribute("data-cy") === "submit-code-btn" ||
+        button.getAttribute("data-e2e-locator") === "console-submit-button" ||
+        button.getAttribute("data-e2e-locator") === "submission-run-btn" ||
+        text === "submit" ||
+        text.includes("submit");
+      if (!isSubmitButton) {
+        return;
+      }
+      submitArmed = true;
+      submitArmedAt = Date.now();
+      hasSentForSubmit = false;
+      lastSubmissionId = "";
+      lastSentAt = 0;
+      lastAcceptedSlug = "";
+      lastAcceptedAt = 0;
+      lastDetectedSlug = "";
+      lastDetectedAt = 0;
+      lastHandledSlug = "";
+    },
+    { capture: true }
+  );
 }
 
 (function init() {
   try {
+    console.info("AlgoNest: content script loaded");
     loadDebounceMs();
-    interceptFetch();
-    interceptXHR();
+    injectNetworkInterceptor();
+    listenForGraphQLMessages();
     setupMutationObserver();
+    setupSubmitClickListener();
     startKeepAlivePing();
   } catch (err) {
     console.warn("AlgoNest content script failed", err);
