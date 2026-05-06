@@ -178,8 +178,9 @@ export async function handleSubmission(payload: SubmissionPayload): Promise<Comm
       }
     }
 
+    await removeStorage(STORAGE_KEYS.pending);
+
     if (normalizedPayload.notes !== undefined) {
-      await removeStorage(STORAGE_KEYS.pending);
       await markLastSubmission(normalizedPayload);
     }
 

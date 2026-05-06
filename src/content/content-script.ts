@@ -16,6 +16,7 @@ let submitArmed = false;
 let submitArmedAt = 0;
 let hasSentForSubmit = false;
 let lastHandledSlug = "";
+let submissionHandled = false;
 
 function normalizeLanguage(raw: string): string {
   const value = raw.trim().toLowerCase();
@@ -301,6 +302,9 @@ function buildPayload(partial: Partial<SubmissionPayload>): SubmissionPayload | 
 }
 
 function scheduleSend(payload: SubmissionPayload): void {
+  if (submissionHandled) {
+    return;
+  }
   const now = Date.now();
   const incomingId = payload.submission_id?.trim() ?? "";
   if (incomingId && incomingId !== lastSubmissionId) {
@@ -348,6 +352,10 @@ function scheduleSend(payload: SubmissionPayload): void {
       console.info("AlgoNest: submission detected", payload.problem_slug);
       chrome.runtime.sendMessage({ type: "SUBMISSION_DETECTED", payload }, () => {
         void chrome.runtime.lastError;
+
+        submissionHandled = true;
+        submitArmed = false;
+        hasSentForSubmit = true;
       });
     } catch {
       // ignore context invalidated
@@ -517,6 +525,7 @@ function setupSubmitClickListener(): void {
         return;
       }
       submitArmed = true;
+      submissionHandled = false;
       submitArmedAt = Date.now();
       hasSentForSubmit = false;
       lastSubmissionId = "";

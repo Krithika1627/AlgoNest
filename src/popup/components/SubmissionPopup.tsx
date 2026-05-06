@@ -56,7 +56,7 @@ export default function SubmissionPopup({ pending, settings }: Props): JSX.Eleme
 
     try {
       await new Promise<void>((resolve) => {
-        chrome.storage.local.set({ pending_submission: null }, () => resolve());
+        chrome.storage.local.remove("pending_submission", () => resolve());
       });
 
       result = await sendMessage<CommitResult>({
@@ -97,13 +97,17 @@ export default function SubmissionPopup({ pending, settings }: Props): JSX.Eleme
       notes: "",
       action: "skip"
     };
-    await chrome.storage.local.set({ pending_submission: null });
+
+    await chrome.storage.local.remove("pending_submission");
+
     await sendMessage<CommitResult>({
       type: "POPUP_RESPONSE",
       payload
     });
+
     setPendingSubmission(null);
     setScreen("main");
+
     window.close();
   };
 
