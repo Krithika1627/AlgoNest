@@ -1,5 +1,5 @@
 const ALGONEST_SOURCE = "algonest";
-console.log("🔥 INJECTOR LOADED");
+
 const postPayload = (payload) => {
   try {
     window.postMessage({ source: ALGONEST_SOURCE, type: "GRAPHQL_RESPONSE", payload }, "*");
@@ -32,7 +32,8 @@ const originalSend = XMLHttpRequest.prototype.send;
 XMLHttpRequest.prototype.send = function send(...args) {
   this.addEventListener("load", () => {
     try {
-      if (this._algonestUrl && String(this._algonestUrl).includes("/graphql")) {
+      const url = String(this._algonestUrl ?? "");
+        if (url && (url.includes("/graphql") || url.includes("/check/"))) {
         postPayload(JSON.parse(this.responseText));
       }
     } catch {

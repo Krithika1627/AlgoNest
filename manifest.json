@@ -27,7 +27,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/injector.js"],
+      "resources": ["injector.js"],
       "matches": ["https://leetcode.com/*"]
     }
   ],

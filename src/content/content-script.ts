@@ -162,7 +162,7 @@ function getLanguageFromDom(): string {
 }
 
 function getMetricFromText(regex: RegExp): string {
-  const text = document.body.innerText;
+  const text = document.body?.innerText ?? "";
   const match = text.match(regex);
   return match ? match[1] : "";
 }
@@ -206,7 +206,25 @@ function getCodeFromDom(): string {
 }
 
 function extractSubmissionFromGraphQL(raw: unknown): Partial<SubmissionPayload> | null {
-  const data = typeof raw === "object" && raw ? (raw as { data?: unknown }).data ?? raw : raw;
+  const data = typeof raw === "object" && raw ? raw as Record<string, unknown> : {};
+
+  if (data.state !== undefined) {
+    if (data.state !== "SUCCESS") return null;           
+    if (data.status_code !== 10 && data.status_msg !== "Accepted") return null;
+    return {
+      submission_id: String(data.submission_id ?? data.id ?? Date.now()),
+      code:          String(data.code ?? ""),
+      runtime_ms: parseNumber((data as any).status_runtime ?? (data as any).display_runtime ?? ""),
+      memory_mb:  parseNumber((data as any).status_memory ?? ""),
+      language:   normalizeLanguage(String((data as any).lang ?? (data as any).pretty_lang ?? "")),
+      tags:          [],
+      problem_title: "",
+      problem_slug:  "",
+      difficulty:    normalizeDifficulty(""),
+      timestamp:     new Date().toISOString(),
+    } as Partial<SubmissionPayload>;
+  }
+
   const submission =
     (data as { submissionDetails?: unknown }).submissionDetails ??
     (data as { submissionDetail?: unknown }).submissionDetail ??
@@ -256,6 +274,7 @@ function extractSubmissionFromGraphQL(raw: unknown): Partial<SubmissionPayload> 
         (submission as { runtime?: string | number }).runtime ??
         ""
     ),
+
     memory_mb: parseNumber(
       (submission as { memoryDisplay?: string; memory?: string | number }).memoryDisplay ??
         (submission as { memory?: string | number }).memory ??
@@ -277,8 +296,11 @@ function buildPayload(partial: Partial<SubmissionPayload>): SubmissionPayload | 
   const title = partial.problem_title?.trim() || getTitleFromDom();
   const difficulty = normalizeDifficulty(partial.difficulty ?? getDifficultyFromDom());
   const language = partial.language?.trim() || getLanguageFromDom();
-  const runtime = partial.runtime_ms && partial.runtime_ms > 0 ? partial.runtime_ms : getRuntimeFromDom();
-  const memory = partial.memory_mb && partial.memory_mb > 0 ? partial.memory_mb : getMemoryFromDom();
+  const runtime =
+    partial.runtime_ms && partial.runtime_ms > 0 ? partial.runtime_ms : getRuntimeFromDom() || 0;
+
+  const memory =
+    partial.memory_mb && partial.memory_mb > 0 ? partial.memory_mb : getMemoryFromDom() || 0;
   const submissionId = partial.submission_id?.trim() || `${Date.now()}`;
   const code = partial.code?.length ? partial.code : getCodeFromDom();
 
@@ -289,7 +311,7 @@ function buildPayload(partial: Partial<SubmissionPayload>): SubmissionPayload | 
   return {
     problem_slug: slug,
     problem_title: title,
-    language: language || "text",
+    language: normalizeLanguage(language || "text"),
     code,
     difficulty,
     tags: partial.tags ?? [],
@@ -302,17 +324,12 @@ function buildPayload(partial: Partial<SubmissionPayload>): SubmissionPayload | 
 }
 
 function scheduleSend(payload: SubmissionPayload): void {
+  if (payload.tags.length === 0 && hasSentForSubmit) return;
+
   if (submissionHandled) {
     return;
   }
   const now = Date.now();
-  const incomingId = payload.submission_id?.trim() ?? "";
-  if (incomingId && incomingId !== lastSubmissionId) {
-    submitArmed = true;
-    submitArmedAt = now;
-    hasSentForSubmit = false;
-    lastHandledSlug = "";
-  }
   if (!submitArmed) {
     return;
   }
@@ -326,6 +343,7 @@ function scheduleSend(payload: SubmissionPayload): void {
   if (payload.problem_slug === lastHandledSlug) {
     return;
   }
+  const incomingId = payload.submission_id?.trim() ?? "";
   if (incomingId && incomingId === lastSubmissionId) {
     return;
   }
@@ -348,6 +366,7 @@ function scheduleSend(payload: SubmissionPayload): void {
     lastAcceptedAt = lastSentAt;
     hasSentForSubmit = true;
     lastHandledSlug = payload.problem_slug;
+    submitArmed = false;
     try {
       console.info("AlgoNest: submission detected", payload.problem_slug);
       chrome.runtime.sendMessage({ type: "SUBMISSION_DETECTED", payload }, () => {
@@ -368,34 +387,13 @@ function handleGraphQLPayload(raw: unknown): void {
   if (!extracted) {
     return;
   }
+  setTimeout(() => {
+    const payload = buildPayload(extracted);
 
-  if (extracted.submission_id && extracted.submission_id !== lastSubmissionId) {
-    submitArmed = true;
-    submitArmedAt = Date.now();
-    hasSentForSubmit = false;
-    lastHandledSlug = "";
-  }
-
-  const payload = buildPayload(extracted);
-  if (payload) {
-    scheduleSend(payload);
-  }
-}
-
-function injectNetworkInterceptor(): void {
-  if (document.querySelector("script[data-algonest-injector='true']")) {
-    return;
-  }
-  const script = document.createElement("script");
-  script.src = chrome.runtime.getURL("src/injector.js");
-  script.type = "text/javascript";
-  script.async = true;
-  script.dataset.algonestInjector = "true";
-  script.onerror = () => {
-    console.warn("AlgoNest: injector failed to load");
-  };
-  script.onload = () => script.remove();
-  (document.documentElement || document.head || document.body).appendChild(script);
+    if (payload) {
+      scheduleSend(payload);
+    }
+  }, 1500);
 }
 
 function listenForGraphQLMessages(): void {
@@ -409,6 +407,22 @@ function listenForGraphQLMessages(): void {
     }
     handleGraphQLPayload(data.payload);
   });
+}
+
+function injectNetworkInterceptor(): void {
+  if (document.querySelector("script[data-algonest-injector='true']")) {
+    return;
+  }
+  const script = document.createElement("script");
+  script.src = chrome.runtime.getURL("injector.js");
+  script.type = "text/javascript";
+  script.async = true;
+  script.dataset.algonestInjector = "true";
+  script.onerror = () => {
+    console.warn("AlgoNest: injector failed to load");
+  };
+  script.onload = () => script.remove();
+  (document.documentElement || document.head || document.body).appendChild(script);
 }
 
 function findAcceptedBadge(): HTMLElement | null {
@@ -437,6 +451,9 @@ function setupMutationObserver(): void {
     if (!acceptedBadge) {
       return;
     }
+    if (!submitArmed) {
+      return;
+    }
     const now = Date.now();
     const slug = getSlugFromUrl();
     if (slug === lastDetectedSlug && now - lastDetectedAt < ACCEPTED_COOLDOWN_MS) {
@@ -444,10 +461,6 @@ function setupMutationObserver(): void {
     }
     lastDetectedSlug = slug;
     lastDetectedAt = now;
-    submitArmed = true;
-    submitArmedAt = now;
-    hasSentForSubmit = false;
-    lastHandledSlug = "";
     console.info("AlgoNest: accepted badge detected in DOM");
 
     const payload = buildPayload({
@@ -515,10 +528,12 @@ function setupSubmitClickListener(): void {
         return;
       }
       const text = button.textContent?.trim().toLowerCase() ?? "";
+      if (text.includes("run") && !text.includes("submit")) {
+        return;
+      }
       const isSubmitButton =
         button.getAttribute("data-cy") === "submit-code-btn" ||
         button.getAttribute("data-e2e-locator") === "console-submit-button" ||
-        button.getAttribute("data-e2e-locator") === "submission-run-btn" ||
         text === "submit" ||
         text.includes("submit");
       if (!isSubmitButton) {

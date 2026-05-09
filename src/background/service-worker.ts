@@ -229,6 +229,61 @@ export async function handleSubmission(payload: SubmissionPayload): Promise<Comm
   }
 }
 
+function normalizeLanguage(raw: string): string {
+  const value = raw.trim().toLowerCase();
+  const cleaned = value.replace(/\([^)]*\)/g, "").trim();
+  const compact = cleaned.replace(/[\s-]+/g, "");
+  const map: Record<string, string> = {
+    python3: "python",
+    python: "python",
+    py: "python",
+    "python2": "python",
+    "python 3": "python",
+    cpp: "cpp",
+    "c++": "cpp",
+    cplusplus: "cpp",
+    c: "c",
+    java: "java",
+    javascript: "javascript",
+    js: "javascript",
+    typescript: "typescript",
+    ts: "typescript",
+    golang: "go",
+    go: "go",
+    csharp: "cs",
+    "c#": "cs",
+    "csharp.net": "cs",
+    kotlin: "kt",
+    swift: "swift",
+    rust: "rust",
+    rustlang: "rust",
+    ruby: "ruby",
+    php: "php",
+    scala: "scala",
+    dart: "dart",
+    r: "r",
+    mysql: "sql",
+    mssql: "sql",
+    postgres: "sql",
+    postgresql: "sql",
+    bash: "sh",
+    shell: "sh",
+    zsh: "sh",
+    "objective-c": "objectivec",
+    objectivec: "objectivec",
+    "objective-c++": "objectivecpp",
+    objectivecpp: "objectivecpp",
+    "f#": "fsharp",
+    fsharp: "fsharp",
+    ocaml: "ocaml",
+    haskell: "haskell",
+    lua: "lua",
+    perl: "perl"
+  };
+
+  return map[cleaned] ?? map[compact] ?? map[value] ?? cleaned;
+}
+
 async function commitSolution(
   payload: SubmissionPayload,
   settings: UserSettings
@@ -248,7 +303,9 @@ async function commitSolution(
     settings.classification_overrides
   );
 
-  const ext = EXT_MAP[payload.language] ?? "txt";
+  const normalizedLanguage = normalizeLanguage(payload.language);
+
+  const ext = EXT_MAP[normalizedLanguage] ?? "txt";
 
   const slug = payload.problem_slug
     .toLowerCase()
@@ -457,14 +514,16 @@ function generateMarkdown(
 ): string {
   const date = new Date(payload.timestamp).toISOString().slice(0, 10);
   const slug = payload.problem_slug;
-  const ext = EXT_MAP[payload.language] ?? payload.language;
+  const ext =
+    EXT_MAP[normalizeLanguage(payload.language)] ??
+    normalizeLanguage(payload.language);
   const fence = "```";
   const approach = payload.notes?.trim()
     ? payload.notes
     : "<!-- add your approach here -->";
   const formatMetric = (value: unknown, unit: string): string => {
-    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-      return `${value} ${unit}`;
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return `${Number(value).toFixed(2)} ${unit}`;
     }
     return "N/A";
   };
