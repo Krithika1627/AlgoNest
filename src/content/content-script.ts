@@ -190,19 +190,35 @@ function getMemoryFromDom(): number {
 }
 
 function getCodeFromDom(): string {
+  // Try Monaco editor model first (gives unbroken lines)
+  try {
+    const editors = (window as any).monaco?.editor?.getEditors?.();
+    if (editors?.length) {
+      const model = editors[0].getModel();
+      if (model) return model.getValue();
+    }
+  } catch { /* fall through */ }
+
+  // Try global monaco models
+  try {
+    const models = (window as any).monaco?.editor?.getModels?.();
+    if (models?.length) {
+      // Pick the largest model 
+      const model = models.reduce((a: any, b: any) =>
+        a.getValue().length > b.getValue().length ? a : b
+      );
+      return model.getValue();
+    }
+  } catch { /* fall through */ }
+
+  // Last resort — DOM scrape (broken for long lines)
   const lines = Array.from(document.querySelectorAll(".view-lines .view-line"));
-  if (lines.length === 0) {
-    const textarea = document.querySelector("textarea");
-    if (textarea instanceof HTMLTextAreaElement) {
-      return textarea.value;
-    }
-    const preCode = document.querySelector("pre code");
-    if (preCode?.textContent) {
-      return preCode.textContent;
-    }
-    return "";
+  if (lines.length) {
+    return lines.map(l => l.textContent ?? "").join("\n");
   }
-  return lines.map((line) => line.textContent ?? "").join("\n");
+  const textarea = document.querySelector("textarea");
+  if (textarea instanceof HTMLTextAreaElement) return textarea.value;
+  return "";
 }
 
 function extractSubmissionFromGraphQL(raw: unknown): Partial<SubmissionPayload> | null {
