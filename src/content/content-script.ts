@@ -190,24 +190,32 @@ function getMemoryFromDom(): number {
 }
 
 function getCodeFromDom(): string {
-  // Try Monaco editor model first (gives unbroken lines)
-  try {
-    const editors = (window as any).monaco?.editor?.getEditors?.();
-    if (editors?.length) {
-      const model = editors[0].getModel();
-      if (model) return model.getValue();
-    }
-  } catch { /* fall through */ }
-
-  // Try global monaco models
+  // Try Monaco editor model first
   try {
     const models = (window as any).monaco?.editor?.getModels?.();
     if (models?.length) {
-      // Pick the largest model 
-      const model = models.reduce((a: any, b: any) =>
-        a.getValue().length > b.getValue().length ? a : b
-      );
-      return model.getValue();
+      // Filter to code models only (not markdown/text description models)
+      const codeModels = models.filter((m: any) => {
+        const lang = m.getLanguageId?.() ?? "";
+        return lang !== "markdown" && lang !== "text" && lang !== "plaintext";
+      });
+      if (codeModels.length) {
+        // Pick the one with the most content
+        const model = codeModels.reduce((a: any, b: any) =>
+          a.getValue().length > b.getValue().length ? a : b
+        );
+        return model.getValue();
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Try active editor specifically
+  try {
+    const editors = (window as any).monaco?.editor?.getEditors?.();
+    if (editors?.length) {
+      // The focused/active editor is most likely the solution editor
+      const active = editors.find((e: any) => e.hasTextFocus?.()) ?? editors[0];
+      return active.getModel().getValue();
     }
   } catch { /* fall through */ }
 
