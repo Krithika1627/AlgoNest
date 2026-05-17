@@ -17,6 +17,7 @@ let submitArmedAt = 0;
 let hasSentForSubmit = false;
 let lastHandledSlug = "";
 let submissionHandled = false;
+let capturedCode = "";
 
 function normalizeLanguage(raw: string): string {
   const value = raw.trim().toLowerCase();
@@ -129,6 +130,29 @@ function getSlugFromUrl(): string {
   return parts[2] ?? "";
 }
 
+async function fetchTagsForSlug(slug: string): Promise<string[]> {
+  try {
+    const res = await fetch("https://leetcode.com/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `
+          query getQuestionDetail($titleSlug: String!) {
+            question(titleSlug: $titleSlug) {
+              topicTags { slug }
+            }
+          }
+        `,
+        variables: { titleSlug: slug }
+      })
+    });
+    const data = await res.json();
+    return (data?.data?.question?.topicTags ?? []).map((t: { slug: string }) => t.slug);
+  } catch {
+    return [];
+  }
+}
+
 function getTitleFromDom(): string {
   const titleEl = document.querySelector("[data-cy='question-title']");
   if (titleEl?.textContent) {
@@ -187,46 +211,6 @@ function getMemoryFromDom(): number {
     return byLabel;
   }
   return parseNumber(getMetricFromText(/Memory\s*:?\s*([\d.]+)\s*MB/i));
-}
-
-function getCodeFromDom(): string {
-  // Try Monaco editor model first
-  try {
-    const models = (window as any).monaco?.editor?.getModels?.();
-    if (models?.length) {
-      // Filter to code models only (not markdown/text description models)
-      const codeModels = models.filter((m: any) => {
-        const lang = m.getLanguageId?.() ?? "";
-        return lang !== "markdown" && lang !== "text" && lang !== "plaintext";
-      });
-      if (codeModels.length) {
-        // Pick the one with the most content
-        const model = codeModels.reduce((a: any, b: any) =>
-          a.getValue().length > b.getValue().length ? a : b
-        );
-        return model.getValue();
-      }
-    }
-  } catch { /* fall through */ }
-
-  // Try active editor specifically
-  try {
-    const editors = (window as any).monaco?.editor?.getEditors?.();
-    if (editors?.length) {
-      // The focused/active editor is most likely the solution editor
-      const active = editors.find((e: any) => e.hasTextFocus?.()) ?? editors[0];
-      return active.getModel().getValue();
-    }
-  } catch { /* fall through */ }
-
-  // Last resort — DOM scrape (broken for long lines)
-  const lines = Array.from(document.querySelectorAll(".view-lines .view-line"));
-  if (lines.length) {
-    return lines.map(l => l.textContent ?? "").join("\n");
-  }
-  const textarea = document.querySelector("textarea");
-  if (textarea instanceof HTMLTextAreaElement) return textarea.value;
-  return "";
 }
 
 function extractSubmissionFromGraphQL(raw: unknown): Partial<SubmissionPayload> | null {
@@ -326,8 +310,8 @@ function buildPayload(partial: Partial<SubmissionPayload>): SubmissionPayload | 
   const memory =
     partial.memory_mb && partial.memory_mb > 0 ? partial.memory_mb : getMemoryFromDom() || 0;
   const submissionId = partial.submission_id?.trim() || `${Date.now()}`;
-  const code = partial.code?.length ? partial.code : getCodeFromDom();
-
+    // Remove getCodeFromDom() fallback — Monaco is fetched async before buildPayload is called
+  const code = partial.code?.trim().length ? partial.code : "";
   if (!code || !slug) {
     return null;
   }
@@ -406,30 +390,43 @@ function scheduleSend(payload: SubmissionPayload): void {
   }, debounceMs);
 }
 
-function handleGraphQLPayload(raw: unknown): void {
+async function handleGraphQLPayload(raw: unknown): Promise<void> {
   const extracted = extractSubmissionFromGraphQL(raw);
-  if (!extracted) {
+  if (!extracted) return;
+
+  if (!extracted.tags || extracted.tags.length === 0) {
+    const slug = extracted.problem_slug?.trim() || getSlugFromUrl();
+    extracted.tags = await fetchTagsForSlug(slug);
+  }
+
+  // Use code captured at submit time
+  extracted.code = capturedCode;
+  if (!extracted.code) {
+    console.warn("AlgoNest: no code captured, aborting");
     return;
   }
-  setTimeout(() => {
-    const payload = buildPayload(extracted);
 
-    if (payload) {
-      scheduleSend(payload);
-    }
-  }, 1500);
+  const payload = buildPayload(extracted);
+  if (payload) scheduleSend(payload);
 }
 
 function listenForGraphQLMessages(): void {
   window.addEventListener("message", (event) => {
-    if (event.source !== window) {
-      return;
-    }
+    if (event.source !== window) return;
     const data = event.data as { source?: string; type?: string; payload?: unknown } | null;
-    if (!data || data.source !== ALGONEST_SOURCE || data.type !== "GRAPHQL_RESPONSE") {
-      return;
+    if (!data || data.source !== ALGONEST_SOURCE || data.type !== "GRAPHQL_RESPONSE") return;
+    void handleGraphQLPayload(data.payload);  // void the promise
+  });
+}
+function listenForCapturedCode(): void {
+  window.addEventListener("message", (event) => {
+    if (event.source !== window) return;
+    const data = event.data as { source?: string; type?: string; payload?: { code?: string } } | null;
+    if (!data || data.source !== ALGONEST_SOURCE || data.type !== "CODE_CAPTURED") return;
+    if (data.payload?.code) {
+      capturedCode = data.payload.code;
+      console.info("AlgoNest: code captured from injector, length:", capturedCode.length);
     }
-    handleGraphQLPayload(data.payload);
   });
 }
 
@@ -471,22 +468,22 @@ function findAcceptedBadge(): HTMLElement | null {
 function setupMutationObserver(): void {
   const observer = new MutationObserver(() => {
     const acceptedBadge = findAcceptedBadge();
+    if (!acceptedBadge) return;
+    if (!submitArmed) return;
 
-    if (!acceptedBadge) {
-      return;
-    }
-    if (!submitArmed) {
-      return;
-    }
     const now = Date.now();
     const slug = getSlugFromUrl();
-    if (slug === lastDetectedSlug && now - lastDetectedAt < ACCEPTED_COOLDOWN_MS) {
-      return;
-    }
+    if (slug === lastDetectedSlug && now - lastDetectedAt < ACCEPTED_COOLDOWN_MS) return;
     lastDetectedSlug = slug;
     lastDetectedAt = now;
     console.info("AlgoNest: accepted badge detected in DOM");
 
+    void (async () => {
+    const code = capturedCode;
+    if (!code) {
+      console.warn("AlgoNest: no code captured at submit time");
+      return;
+    }
     const payload = buildPayload({
       problem_slug: slug,
       problem_title: getTitleFromDom(),
@@ -496,12 +493,11 @@ function setupMutationObserver(): void {
       memory_mb: getMemoryFromDom(),
       submission_id: `${Date.now()}`,
       timestamp: new Date().toISOString(),
-      tags: []
+      tags: [],
+      code
     });
-
-    if (payload) {
-      scheduleSend(payload);
-    }
+    if (payload) scheduleSend(payload);
+  })();
   });
 
   observer.observe(document.body, { childList: true, subtree: true });
@@ -548,21 +544,20 @@ function setupSubmitClickListener(): void {
     (event) => {
       const target = event.target as Element | null;
       const button = target?.closest("button, [role='button']");
-      if (!button) {
-        return;
-      }
+      if (!button) return;
+
       const text = button.textContent?.trim().toLowerCase() ?? "";
-      if (text.includes("run") && !text.includes("submit")) {
-        return;
-      }
+      if (text.includes("run") && !text.includes("submit")) return;
+
       const isSubmitButton =
         button.getAttribute("data-cy") === "submit-code-btn" ||
         button.getAttribute("data-e2e-locator") === "console-submit-button" ||
         text === "submit" ||
         text.includes("submit");
-      if (!isSubmitButton) {
-        return;
-      }
+      if (!isSubmitButton) return;
+
+      capturedCode = "";
+
       submitArmed = true;
       submissionHandled = false;
       submitArmedAt = Date.now();
@@ -585,6 +580,7 @@ function setupSubmitClickListener(): void {
     loadDebounceMs();
     injectNetworkInterceptor();
     listenForGraphQLMessages();
+    listenForCapturedCode();
     setupMutationObserver();
     setupSubmitClickListener();
     startKeepAlivePing();

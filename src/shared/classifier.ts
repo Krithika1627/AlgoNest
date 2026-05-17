@@ -139,17 +139,34 @@ export function classifyTopic(
   }
 
   const titleLower = title.toLowerCase();
-  if (titleLower.includes("tree") || titleLower.includes("bst")) {
-    return "Trees";
-  }
-  if (titleLower.includes("graph") || titleLower.includes("path")) {
-    return "Graphs";
-  }
-  if (titleLower.includes("string") || titleLower.includes("substring")) {
-    return "Strings";
-  }
-  if (titleLower.includes("sum") || titleLower.includes("array")) {
-    return "Arrays";
-  }
+
+  if (titleLower.includes("tree") || titleLower.includes("bst") || 
+      titleLower.includes("trie")) return "Trees";
+
+  if (titleLower.includes("graph") || titleLower.includes("path") ||
+      titleLower.includes("island") || titleLower.includes("network") ||
+      titleLower.includes("course") || titleLower.includes("route")) return "Graphs";
+
+  if (titleLower.includes("string") || titleLower.includes("substring") ||
+      titleLower.includes("palindrome") || titleLower.includes("anagram") ||
+      titleLower.includes("parenthes") || titleLower.includes("bracket")) return "Strings";
+
+  if (titleLower.includes("array") || titleLower.includes("subarray") ||
+      titleLower.includes("matrix") || titleLower.includes("grid")) return "Arrays";
+
+  if (titleLower.includes("list") || titleLower.includes("node") ||
+      titleLower.includes("pointer")) return "LinkedList";
+
+  if (titleLower.includes("stack") || titleLower.includes("queue")) return "Stack";
+
+  if (titleLower.includes("search") || titleLower.includes("binary")) return "BinarySearch";
+
+  if (titleLower.includes("dynamic") || titleLower.includes("maximum") ||
+      titleLower.includes("minimum") || titleLower.includes("longest") ||
+      titleLower.includes("shortest") || titleLower.includes("count") ||
+      titleLower.includes("ways")) return "DynamicProgramming";
+
+  if (titleLower.includes("sum") || titleLower.includes("number") ||
+      titleLower.includes("integer") || titleLower.includes("digit")) return "Math";
   return "Misc";
 }

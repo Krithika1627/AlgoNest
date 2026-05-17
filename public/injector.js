@@ -42,3 +42,47 @@ XMLHttpRequest.prototype.send = function send(...args) {
   });
   return originalSend.apply(this, args);
 };
+
+// Capture code from Monaco at submit time and post to content script
+function getCodeFromMonaco() {
+  try {
+    const models = window.monaco?.editor?.getModels?.();
+    if (models?.length) {
+      const codeModels = models.filter(m => {
+        const lang = m.getLanguageId?.() ?? "";
+        return lang !== "markdown" && lang !== "plaintext" && lang !== "text";
+      });
+      if (codeModels.length) {
+        const model = codeModels.reduce((a, b) =>
+          a.getValue().length > b.getValue().length ? a : b
+        );
+        const val = model.getValue();
+        if (val.trim().length > 0) return val;
+      }
+    }
+  } catch { /* fall through */ }
+  return null;
+}
+
+// Intercept submit button clicks
+document.addEventListener("click", (event) => {
+  const button = event.target?.closest("button, [role='button']");
+  if (!button) return;
+  const text = button.textContent?.trim().toLowerCase() ?? "";
+  if (text.includes("run") && !text.includes("submit")) return;
+  const isSubmit =
+    button.getAttribute("data-cy") === "submit-code-btn" ||
+    button.getAttribute("data-e2e-locator") === "console-submit-button" ||
+    text === "submit" ||
+    text.includes("submit");
+  if (!isSubmit) return;
+
+  const code = getCodeFromMonaco();
+  if (code) {
+    window.postMessage({
+      source: "algonest",
+      type: "CODE_CAPTURED",
+      payload: { code }
+    }, "*");
+  }
+}, { capture: true });
