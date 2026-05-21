@@ -6,6 +6,8 @@ type Screen = "setup" | "popup" | "main";
 type Toast = {
   message: string;
   type: "success" | "error";
+  linkUrl?: string;
+  linkLabel?: string;
 } | null;
 
 interface PopupStore {

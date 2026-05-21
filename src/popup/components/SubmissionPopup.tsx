@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { CommitResult, SubmissionPayload, UserSettings } from "../../shared/types";
 import { classifyTopic } from "../../shared/classifier";
 import { usePopupStore } from "../store";
@@ -36,12 +36,27 @@ export default function SubmissionPopup({ pending, settings }: Props): JSX.Eleme
     [pending.problem_title, pending.tags, settings.classification_overrides]
   );
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void handleSkip();
-    }, 30000);
-    return () => window.clearTimeout(timer);
-  }, []);
+  const getToastDetails = (result: CommitResult) => {
+    if (!result.file_path) {
+      return { message: "Committed to GitHub." };
+    }
+
+    const cleanedPath = result.file_path.replace(/^\/+/, "");
+    const pathParts = cleanedPath.split("/");
+    const fileName = pathParts[pathParts.length - 1] ?? "";
+    const topicSegment = result.topic ?? pathParts[pathParts.length - 2] ?? "";
+    const baseSlug = fileName.replace(/\.[^.]+$/, "").replace(/_v\d+$/, "");
+    const mdPath = `solutions/${topicSegment}/${baseSlug}.md`;
+    const branch = settings.branch || "main";
+    const repo = settings.repo_full_name;
+    const url = repo ? `https://github.com/${repo}/blob/${branch}/${mdPath}` : "";
+
+    return {
+      message: `✓ Committed to ${topicSegment}/${baseSlug}.md`,
+      linkUrl: url,
+      linkLabel: "View on GitHub →"
+    };
+  };
 
   const handleSave = async () => {
     setLoading(true);
@@ -78,14 +93,15 @@ export default function SubmissionPopup({ pending, settings }: Props): JSX.Eleme
     }
 
     if (result.status === "committed" || result.status === "versioned") {
-      setToast({ message: "Committed to GitHub.", type: "success" });
-      window.setTimeout(() => window.close(), 500);
+      const toastDetails = getToastDetails(result);
+      setToast({ ...toastDetails, type: "success" });
+      window.setTimeout(() => window.close(), 3500);
     } else if (result.status === "queued") {
       setToast({ message: "Queued for retry.", type: "success" });
-      window.setTimeout(() => window.close(), 500);
+      window.setTimeout(() => window.close(), 3500);
     } else if (result.status === "skipped") {
       setToast({ message: "Submission skipped.", type: "success" });
-      window.setTimeout(() => window.close(), 500);
+      window.setTimeout(() => window.close(), 3500);
     } else {
       setToast({ message: result.message ?? "Commit failed.", type: "error" });
     }
@@ -113,10 +129,6 @@ export default function SubmissionPopup({ pending, settings }: Props): JSX.Eleme
 
   return (
     <div className="card fade-in flex flex-1 flex-col gap-4 p-4">
-      <div className="progress-track">
-        <div className="progress-bar" style={{ animationDuration: "30s" }} />
-      </div>
-
       <div>
         <div className="text-lg font-semibold">{pending.problem_title}</div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">

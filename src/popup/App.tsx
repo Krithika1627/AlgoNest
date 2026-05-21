@@ -91,18 +91,23 @@ export default function App(): JSX.Element {
     return () => window.clearTimeout(timer);
   }, [setToast, toast]);
 
+  const openToastLink = (url: string) => {
+    if (!url) {
+      return;
+    }
+    if (chrome?.tabs?.create) {
+      chrome.tabs.create({ url });
+    } else {
+      window.open(url, "_blank");
+    }
+  };
+
   return (
     <div className="relative flex w-full flex-1 flex-col gap-4 p-4">
       <div className="flex items-center justify-between">
         <div className="text-lg font-semibold tracking-tight">AlgoNest</div>
         <div className="text-xs uppercase text-slate-300">{queueCount} queued</div>
       </div>
-
-      {screen === "setup" && <SetupScreen />}
-      {screen === "popup" && pendingSubmission && settings && (
-        <SubmissionPopup pending={pendingSubmission} settings={settings} />
-      )}
-      {screen === "main" && settings && <MainScreen settings={settings} />}
 
       {toast && (
         <div
@@ -112,9 +117,25 @@ export default function App(): JSX.Element {
               : "bg-rose-500/20 text-rose-50"
           }`}
         >
-          {toast.message}
+          <div className="flex flex-wrap items-center gap-2">
+            <span>{toast.message}</span>
+            {toast.linkUrl && (
+              <button
+                onClick={() => openToastLink(toast.linkUrl ?? "")}
+                className="underline underline-offset-2"
+              >
+                {toast.linkLabel ?? "View on GitHub →"}
+              </button>
+            )}
+          </div>
         </div>
       )}
+
+      {screen === "setup" && <SetupScreen />}
+      {screen === "popup" && pendingSubmission && settings && (
+        <SubmissionPopup pending={pendingSubmission} settings={settings} />
+      )}
+      {screen === "main" && settings && <MainScreen settings={settings} />}
 
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/40">
