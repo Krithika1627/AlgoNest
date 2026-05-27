@@ -1,5 +1,6 @@
 import { classifyTopic } from "../shared/classifier";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
+import { generateMarkdown } from "../shared/markdown";
 import type {
   CommitResult,
   QueuedSubmission,
@@ -505,32 +506,6 @@ async function sha256(text: string): Promise<string> {
   return Array.from(new Uint8Array(buffer))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-}
-
-function generateMarkdown(
-  payload: SubmissionPayload,
-  topic: string,
-  _filePath: string
-): string {
-  const date = new Date(payload.timestamp).toISOString().slice(0, 10);
-  const slug = payload.problem_slug;
-  const ext =
-    EXT_MAP[normalizeLanguage(payload.language)] ??
-    normalizeLanguage(payload.language);
-  const fence = "```";
-  const approach = payload.notes?.trim()
-    ? payload.notes
-    : "<!-- add your approach here -->";
-  const formatMetric = (value: unknown, unit: string): string => {
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return `${Number(value).toFixed(2)} ${unit}`;
-    }
-    return "N/A";
-  };
-  const runtimeLabel = formatMetric(payload.runtime_ms, "ms");
-  const memoryLabel = formatMetric(payload.memory_mb, "MB");
-
-  return `# ${payload.problem_title}\n\n**Difficulty:** ${payload.difficulty} | **Topic:** ${topic} | **Language:** ${payload.language}  \n**Solved:** ${date}  \n**LeetCode:** https://leetcode.com/problems/${slug}/\n\n## Approach\n${approach}\n\n## Complexity\n- Time: <!-- e.g. O(n) -->\n- Space: <!-- e.g. O(1) -->\n\n## Solution\n${fence}${ext}\n${payload.code}\n${fence}\n\n## Runtime & Memory\n- Runtime: ${runtimeLabel}\n- Memory: ${memoryLabel}\n\n## Mistakes & Notes\n<!-- use this section for post-solve reflections -->\n\n## Related Problems\n<!-- links to similar problems will be added in Part 2 -->\n`;
 }
 
 function isRetryableError(err: unknown): boolean {
