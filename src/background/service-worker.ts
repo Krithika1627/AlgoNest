@@ -11,6 +11,7 @@ import {
   AuthError,
   NetworkError,
   RateLimitError,
+  getFileContent,
   getFileSHA,
   putFile
 } from "../shared/github-api";
@@ -285,6 +286,66 @@ function normalizeLanguage(raw: string): string {
   return map[cleaned] ?? map[compact] ?? map[value] ?? cleaned;
 }
 
+function safeDate(input: string): string {
+  const parsed = new Date(input);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  return parsed.toISOString().slice(0, 10);
+}
+
+function decodeGitHubContent(content: string): string {
+  const normalized = content.replace(/\s/g, "");
+  return decodeURIComponent(escape(atob(normalized)));
+}
+
+function appendVersionRow(markdown: string, row: string): string {
+  if (markdown.includes(row)) {
+    return markdown;
+  }
+
+  const lines = markdown.split("\n");
+  const headerIndex = lines.findIndex((line) => line.trim() === "## Versions");
+  if (headerIndex === -1) {
+    return `${markdown.trimEnd()}\n\n## Versions\n| Version | File | Date |\n|---------|------|------|\n${row}\n`;
+  }
+
+  let tableStart = -1;
+  for (let i = headerIndex + 1; i < lines.length; i += 1) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith("## ")) {
+      break;
+    }
+    if (trimmed.startsWith("|")) {
+      tableStart = i;
+      break;
+    }
+  }
+
+  if (tableStart === -1) {
+    const insertAt = headerIndex + 1;
+    const tableBlock = [
+      "| Version | File | Date |",
+      "|---------|------|------|",
+      row
+    ];
+    lines.splice(insertAt, 0, ...tableBlock);
+    return lines.join("\n");
+  }
+
+  let insertAt = tableStart + 1;
+  for (let i = tableStart + 1; i < lines.length; i += 1) {
+    if (!lines[i].trim().startsWith("|")) {
+      insertAt = i;
+      break;
+    }
+    insertAt = i + 1;
+  }
+
+  lines.splice(insertAt, 0, row);
+  return lines.join("\n");
+}
+
 async function commitSolution(
   payload: SubmissionPayload,
   settings: UserSettings
@@ -328,23 +389,52 @@ async function commitSolution(
     }
   }
 
-  const mdContent = generateMarkdown(payload, topic, filePath);
   const mdPath = `solutions/${topic}/${slug}.md`;
 
-  const [codeSHA, mdSHA] = await Promise.all([
-    getFileSHA(settings.github_token, settings.repo_full_name, filePath, settings.branch),
-    getFileSHA(settings.github_token, settings.repo_full_name, mdPath, settings.branch)
-  ]);
+  const codeSHA = await getFileSHA(
+    settings.github_token,
+    settings.repo_full_name,
+    filePath,
+    settings.branch
+  );
+
+  let mdContent = generateMarkdown(payload, topic, filePath);
+  let mdSHA: string | null = null;
+
+  if (payload.action === "version") {
+    const mdFile = await getFileContent(
+      settings.github_token,
+      settings.repo_full_name,
+      mdPath,
+      settings.branch
+    );
+
+    if (mdFile?.content) {
+      const date = safeDate(payload.timestamp);
+      const versionRow = `| v${version} | [${slug}_v${version}.${ext}](./${slug}_v${version}.${ext}) | ${date} |`;
+      mdContent = appendVersionRow(decodeGitHubContent(mdFile.content), versionRow);
+      mdSHA = mdFile.sha;
+    }
+  } else {
+    mdSHA = await getFileSHA(
+      settings.github_token,
+      settings.repo_full_name,
+      mdPath,
+      settings.branch
+    );
+  }
 
   const topicLabel = topic;
   const approach = payload.notes?.split(" ").slice(0, 5).join(" ") ?? "";
   const actionLabel = codeSHA && payload.action !== "version" ? "update" : "add";
   const message =
-    settings.commit_message_style === "rich"
-      ? `[${topicLabel}] ${slug} · ${payload.language} · ${actionLabel}${
-          approach ? ` (${approach})` : ""
-        }`
-      : `Add ${slug}`;
+    payload.action === "version"
+      ? `[${topicLabel}] ${slug} · ${payload.language} · v${version}`
+      : settings.commit_message_style === "rich"
+        ? `[${topicLabel}] ${slug} · ${payload.language} · ${actionLabel}${
+            approach ? ` (${approach})` : ""
+          }`
+        : `Add ${slug}`;
 
   const commitSHA = await putFile(
     settings.github_token,

@@ -7,6 +7,11 @@ const fileSchema = z.object({
   sha: z.string()
 });
 
+const contentSchema = z.object({
+  sha: z.string(),
+  content: z.string()
+});
+
 const commitSchema = z.object({
   commit: z.object({
     sha: z.string()
@@ -180,6 +185,37 @@ export async function getFileSHA(
 
   const json = fileSchema.parse(await res.json());
   return json.sha;
+}
+
+export async function getFileContent(
+  token: string,
+  repoFullName: string,
+  path: string,
+  branch: string
+): Promise<{ content: string; sha: string } | null> {
+  const res = await fetchWithRetry(
+    `${BASE_URL}/repos/${repoFullName}/contents/${path}?ref=${encodeURIComponent(branch)}`,
+    {
+      method: "GET",
+      headers: authHeaders(token)
+    }
+  );
+
+  if (res.status === 404) {
+    return null;
+  }
+  if (res.status === 401) {
+    throw new AuthError();
+  }
+  if (isRateLimitResponse(res)) {
+    throw new RateLimitError();
+  }
+  if (!res.ok) {
+    throw new Error(`GitHub get content failed: ${res.status}`);
+  }
+
+  const json = contentSchema.parse(await res.json());
+  return { content: json.content, sha: json.sha };
 }
 
 export async function putFile(
