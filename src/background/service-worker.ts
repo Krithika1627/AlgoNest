@@ -1,6 +1,7 @@
 import { classifyTopic } from "../shared/classifier";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { generateMarkdown } from "../shared/markdown";
+import { commitStats, fetchStats, updateStats } from "../shared/stats";
 import type {
   CommitResult,
   QueuedSubmission,
@@ -446,6 +447,7 @@ async function commitSolution(
     codeSHA ?? undefined
   );
 
+  let markdownCommitted = false;
   try {
     await putFile(
       settings.github_token,
@@ -456,8 +458,25 @@ async function commitSolution(
       settings.branch,
       mdSHA ?? undefined
     );
+    markdownCommitted = true;
   } catch (err) {
     console.warn("Markdown commit failed", err);
+  }
+
+  if (markdownCommitted) {
+    const { stats, sha } = await fetchStats(
+      settings.github_token,
+      settings.repo_full_name,
+      settings.branch
+    );
+    const updated = updateStats(stats, payload, topic, commitSHA);
+    await commitStats(
+      settings.github_token,
+      settings.repo_full_name,
+      settings.branch,
+      updated,
+      sha
+    );
   }
 
   await storeHash(slug, codeHash);
