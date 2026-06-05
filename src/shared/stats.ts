@@ -22,75 +22,6 @@ export type StatsData = {
   solve_log: StatsEntry[];
 };
 
-const DEFAULT_TOPICS = [
-  "Arrays",
-  "Backtracking",
-  "BinarySearch",
-  "BitManipulation",
-  "Bitmask",
-  "Combinatorics",
-  "Counting",
-  "Database",
-  "Design",
-  "DivideAndConquer",
-  "DynamicProgramming",
-  "FenwickTree",
-  "GameTheory",
-  "Geometry",
-  "Graphs",
-  "Greedy",
-  "Heap",
-  "Intervals",
-  "LinkedList",
-  "Math",
-  "Matrix",
-  "Misc",
-  "MonotonicQueue",
-  "MonotonicStack",
-  "OrderedSet",
-  "PrefixSum",
-  "Probability",
-  "Queue",
-  "Recursion",
-  "SegmentTree",
-  "Shell",
-  "Simulation",
-  "SlidingWindow",
-  "Stack",
-  "Strings",
-  "Trees",
-  "Trie",
-  "TwoPointers"
-];
-
-const DEFAULT_LANGUAGES = [
-  "python",
-  "cpp",
-  "c",
-  "java",
-  "javascript",
-  "typescript",
-  "go",
-  "cs",
-  "kt",
-  "swift",
-  "rust",
-  "ruby",
-  "php",
-  "scala",
-  "dart",
-  "r",
-  "sql",
-  "sh",
-  "objectivec",
-  "objectivecpp",
-  "fsharp",
-  "ocaml",
-  "haskell",
-  "lua",
-  "perl"
-];
-
 function base64Decode(content: string): string {
   const normalized = content.replace(/\s/g, "");
   return decodeURIComponent(escape(atob(normalized)));
@@ -111,25 +42,15 @@ function normalizeLanguage(value: string): string {
 }
 
 export function defaultStats(): StatsData {
-  const byTopic: Record<string, number> = {};
-  for (const topic of DEFAULT_TOPICS) {
-    byTopic[topic] = 0;
-  }
-
-  const byLanguage: Record<string, number> = {};
-  for (const lang of DEFAULT_LANGUAGES) {
-    byLanguage[lang] = 0;
-  }
-
   return {
     total_solved: 0,
-    by_topic: byTopic,
+    by_topic: {},
     by_difficulty: {
       Easy: 0,
       Medium: 0,
       Hard: 0
     },
-    by_language: byLanguage,
+    by_language: {},
     current_streak: 0,
     longest_streak: 0,
     last_solved_date: "",

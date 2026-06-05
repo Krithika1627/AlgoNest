@@ -1,7 +1,8 @@
 import { classifyTopic } from "../shared/classifier";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { generateMarkdown } from "../shared/markdown";
-import { commitStats, fetchStats, updateStats } from "../shared/stats";
+import { generateREADME } from "../shared/readme";
+import { commitStats, fetchStats, updateStats, StatsData } from "../shared/stats";
 import type {
   CommitResult,
   QueuedSubmission,
@@ -477,6 +478,14 @@ async function commitSolution(
       updated,
       sha
     );
+
+    // README AUTO-GENERATION
+    const readmeSHA = await getFileSHA(settings.github_token, settings.repo_full_name, "README.md", settings.branch);
+    const readmeContent = generateREADME(updated, settings.repo_full_name.split("/")[1]);
+    try {
+      await putFile(settings.github_token, settings.repo_full_name, "README.md", readmeContent,
+        "docs: update README", settings.branch, readmeSHA ?? undefined);
+    } catch(e) { console.warn("README commit failed", e); }
   }
 
   await storeHash(slug, codeHash);
