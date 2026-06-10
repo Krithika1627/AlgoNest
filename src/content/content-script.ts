@@ -394,12 +394,15 @@ async function handleGraphQLPayload(raw: unknown): Promise<void> {
   const extracted = extractSubmissionFromGraphQL(raw);
   if (!extracted) return;
 
+  if (!capturedCode) {
+    await new Promise(r => setTimeout(r, 500));
+  }
+
   if (!extracted.tags || extracted.tags.length === 0) {
     const slug = extracted.problem_slug?.trim() || getSlugFromUrl();
     extracted.tags = await fetchTagsForSlug(slug);
   }
 
-  // Use code captured at submit time
   extracted.code = capturedCode;
   if (!extracted.code) {
     console.warn("AlgoNest: no code captured, aborting");
@@ -479,6 +482,9 @@ function setupMutationObserver(): void {
     console.info("AlgoNest: accepted badge detected in DOM");
 
     void (async () => {
+    if (!capturedCode) {
+      await new Promise(r => setTimeout(r, 500));
+    }
     const code = capturedCode;
     if (!code) {
       console.warn("AlgoNest: no code captured at submit time");

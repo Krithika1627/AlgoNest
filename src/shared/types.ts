@@ -11,6 +11,7 @@ export interface SubmissionPayload {
   timestamp: string;
   notes?: string;
   action: "overwrite" | "version" | "skip";
+  topic_override?: string;
 }
 
 export interface UserSettings {

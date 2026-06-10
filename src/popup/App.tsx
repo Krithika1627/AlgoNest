@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import SetupScreen from "./components/SetupScreen";
-import SubmissionPopup from "./components/SubmissionPopup";
+import PopupV2 from "./components/PopupV2";
 import MainScreen from "./components/MainScreen";
 import { usePopupStore } from "./store";
 import { sendMessage } from "./utils";
@@ -133,7 +133,7 @@ export default function App(): JSX.Element {
 
       {screen === "setup" && <SetupScreen />}
       {screen === "popup" && pendingSubmission && settings && (
-        <SubmissionPopup pending={pendingSubmission} settings={settings} />
+        <PopupV2 pending={pendingSubmission} settings={settings} />
       )}
       {screen === "main" && settings && <MainScreen settings={settings} />}
 

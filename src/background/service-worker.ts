@@ -361,7 +361,7 @@ async function commitSolution(
     return { status: "error", message: "Missing code" };
   }
 
-  const topic = classifyTopic(
+  const topic = payload.topic_override ?? classifyTopic(
     payload.tags,
     payload.problem_title,
     settings.classification_overrides
