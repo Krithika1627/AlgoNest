@@ -174,7 +174,7 @@ export default function PopupV2({ pending, settings }: Props): JSX.Element {
     window.close();
   };
 
-  // --- MAIN POPUP CONTENT ---
+  //MAIN POPUP CONTENT
   const diffStyle = DIFFICULTY_STYLES[pending.difficulty];
 
   return (

@@ -4,7 +4,7 @@ const postPayload = (payload) => {
   try {
     window.postMessage({ source: ALGONEST_SOURCE, type: "GRAPHQL_RESPONSE", payload }, "*");
   } catch {
-    // ignore
+    
   }
 };
 
@@ -17,7 +17,7 @@ window.fetch = async (...args) => {
       response.clone().json().then(postPayload).catch(() => null);
     }
   } catch {
-    // ignore
+    
   }
   return response;
 };
@@ -37,13 +37,12 @@ XMLHttpRequest.prototype.send = function send(...args) {
         postPayload(JSON.parse(this.responseText));
       }
     } catch {
-      // ignore
+      
     }
   });
   return originalSend.apply(this, args);
 };
 
-// Capture code from Monaco at submit time and post to content script
 function getCodeFromMonaco() {
   try {
     const models = window.monaco?.editor?.getModels?.();
@@ -60,11 +59,23 @@ function getCodeFromMonaco() {
         if (val.trim().length > 0) return val;
       }
     }
-  } catch { /* fall through */ }
+  } catch { 
+
+  }
   return null;
 }
 
-// Intercept submit button clicks
+function getDifficultyFromDom() {
+  const badge = document.querySelector("[diff]");
+  if (badge?.textContent) return badge.textContent.trim();
+  const candidates = Array.from(document.querySelectorAll("span, div, button"));
+  const found = candidates.find(n => {
+    const t = n.textContent?.trim().toLowerCase();
+    return t === "easy" || t === "medium" || t === "hard";
+  });
+  return found?.textContent?.trim() ?? "";
+}
+
 document.addEventListener("click", (event) => {
   const button = event.target?.closest("button, [role='button']");
   if (!button) return;
@@ -82,7 +93,9 @@ document.addEventListener("click", (event) => {
     window.postMessage({
       source: "algonest",
       type: "CODE_CAPTURED",
-      payload: { code }
+      payload: { code,
+                 difficulty: getDifficultyFromDom()
+       }
     }, "*");
   }
 }, { capture: true });

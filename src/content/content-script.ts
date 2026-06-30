@@ -18,6 +18,7 @@ let hasSentForSubmit = false;
 let lastHandledSlug = "";
 let submissionHandled = false;
 let capturedCode = "";
+let capturedDifficulty = "";
 
 function normalizeLanguage(raw: string): string {
   const value = raw.trim().toLowerCase();
@@ -409,6 +410,12 @@ async function handleGraphQLPayload(raw: unknown): Promise<void> {
     return;
   }
 
+  if (!extracted.difficulty || extracted.difficulty === "Easy") {
+    if (capturedDifficulty) {
+      extracted.difficulty = normalizeDifficulty(capturedDifficulty);
+    }
+  }
+
   const payload = buildPayload(extracted);
   if (payload) scheduleSend(payload);
 }
@@ -424,11 +431,14 @@ function listenForGraphQLMessages(): void {
 function listenForCapturedCode(): void {
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
-    const data = event.data as { source?: string; type?: string; payload?: { code?: string } } | null;
+    const data = event.data as { source?: string; type?: string; payload?: { code?: string; difficulty?: string } } | null;
     if (!data || data.source !== ALGONEST_SOURCE || data.type !== "CODE_CAPTURED") return;
     if (data.payload?.code) {
       capturedCode = data.payload.code;
       console.info("AlgoNest: code captured from injector, length:", capturedCode.length);
+    }
+    if (data.payload?.difficulty) {
+      capturedDifficulty = data.payload.difficulty;
     }
   });
 }
@@ -493,7 +503,7 @@ function setupMutationObserver(): void {
     const payload = buildPayload({
       problem_slug: slug,
       problem_title: getTitleFromDom(),
-      difficulty: normalizeDifficulty(getDifficultyFromDom()),
+      difficulty: normalizeDifficulty(capturedDifficulty || getDifficultyFromDom()),
       language: getLanguageFromDom(),
       runtime_ms: getRuntimeFromDom(),
       memory_mb: getMemoryFromDom(),
@@ -562,8 +572,6 @@ function setupSubmitClickListener(): void {
         text.includes("submit");
       if (!isSubmitButton) return;
 
-      capturedCode = "";
-
       submitArmed = true;
       submissionHandled = false;
       submitArmedAt = Date.now();
@@ -575,6 +583,8 @@ function setupSubmitClickListener(): void {
       lastDetectedSlug = "";
       lastDetectedAt = 0;
       lastHandledSlug = "";
+      capturedCode = "";
+      capturedDifficulty = "";
     },
     { capture: true }
   );
