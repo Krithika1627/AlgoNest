@@ -413,8 +413,23 @@ async function commitSolution(
 
     if (mdFile?.content) {
       const date = safeDate(payload.timestamp);
+      const decoded = decodeGitHubContent(mdFile.content);
+
+      let patched = decoded;
+      if (payload.notes?.trim()) {
+        const runtime = payload.runtime_ms > 0 ? ` · ${payload.runtime_ms} ms` : "";
+        const memory = payload.memory_mb > 0 ? ` · ${payload.memory_mb} MB` : "";
+        const versionNote = `\n\n**v${version} (${date}):** ${payload.notes.trim()}${runtime}${memory}`;
+        const approachIndex = patched.indexOf("## Approach");
+        if (approachIndex !== -1) {
+          const nextSection = patched.indexOf("\n## ", approachIndex + 11);
+          const insertPoint = nextSection !== -1 ? nextSection : patched.length;
+          patched = patched.slice(0, insertPoint) + versionNote + patched.slice(insertPoint);
+        }
+      }
+
       const versionRow = `| v${version} | [${slug}_v${version}.${ext}](./${slug}_v${version}.${ext}) | ${date} |`;
-      mdContent = appendVersionRow(decodeGitHubContent(mdFile.content), versionRow);
+      mdContent = appendVersionRow(patched, versionRow);
       mdSHA = mdFile.sha;
     }
   } else {

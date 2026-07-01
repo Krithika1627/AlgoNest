@@ -305,13 +305,9 @@ function buildPayload(partial: Partial<SubmissionPayload>): SubmissionPayload | 
   const title = partial.problem_title?.trim() || getTitleFromDom();
   const difficulty = normalizeDifficulty(partial.difficulty ?? getDifficultyFromDom());
   const language = partial.language?.trim() || getLanguageFromDom();
-  const runtime =
-    partial.runtime_ms && partial.runtime_ms > 0 ? partial.runtime_ms : getRuntimeFromDom() || 0;
-
-  const memory =
-    partial.memory_mb && partial.memory_mb > 0 ? partial.memory_mb : getMemoryFromDom() || 0;
+  const runtime = typeof partial.runtime_ms === "number" ? partial.runtime_ms : getRuntimeFromDom() || 0;
+  const memory = typeof partial.memory_mb === "number" ? partial.memory_mb : getMemoryFromDom() || 0;
   const submissionId = partial.submission_id?.trim() || `${Date.now()}`;
-    // Remove getCodeFromDom() fallback — Monaco is fetched async before buildPayload is called
   const code = partial.code?.trim().length ? partial.code : "";
   if (!code || !slug) {
     return null;
