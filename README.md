@@ -106,12 +106,19 @@ npm install
 
 ### 3. Build the extension
 
+**For Chrome:**
 ```bash
 npm run build
 ```
 
-### 4. Load in Chrome
+**For Firefox:**
+```bash
+npm run build:firefox
+```
 
+### 4. Load the Extension
+
+#### In Chrome
 ```bash
 # Open in browser
 chrome://extensions
@@ -120,6 +127,15 @@ chrome://extensions
 * Enable **Developer mode**
 * Click **Load unpacked**
 * Select the `dist/` folder
+
+#### In Firefox
+```bash
+# Open in browser
+about:debugging#/runtime/this-firefox
+```
+
+* Click **Load Temporary Add-on...**
+* Select the `manifest.json` file inside the `dist-firefox/` folder
 
 ---
 
