@@ -43,3 +43,12 @@ export interface CommitResult {
   showModal?: boolean;
   payload?: SubmissionPayload;
 }
+
+/** Stored when the docs commit (commit 2) fails after the code commit (commit 1) succeeds. */
+export interface PendingDocsPayload {
+  mdPath: string;
+  mdContent: string;
+  readmeContent: string;
+  commitMessage: string;
+  slug: string;
+}
