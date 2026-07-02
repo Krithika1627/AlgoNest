@@ -2,9 +2,10 @@ import { classifyTopic } from "../shared/classifier";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
 import { generateMarkdown } from "../shared/markdown";
 import { generateREADME } from "../shared/readme";
-import { commitStats, fetchStats, updateStats, StatsData } from "../shared/stats";
+import { fetchStats, updateStats, StatsData } from "../shared/stats";
 import type {
   CommitResult,
+  PendingDocsPayload,
   QueuedSubmission,
   SubmissionPayload,
   UserSettings
@@ -13,9 +14,9 @@ import {
   AuthError,
   NetworkError,
   RateLimitError,
+  commitMultipleFiles,
   getFileContent,
-  getFileSHA,
-  putFile
+  getFileSHA
 } from "../shared/github-api";
 
 const STORAGE_KEYS = {
@@ -24,7 +25,8 @@ const STORAGE_KEYS = {
   queue: "submission_queue",
   hashes: "code_hashes",
   authError: "auth_error",
-  lastSubmission: "last_submission"
+  lastSubmission: "last_submission",
+  pendingDocs: "pending_docs"
 } as const;
 
 const EXT_MAP: Record<string, string> = {
@@ -368,7 +370,6 @@ async function commitSolution(
   );
 
   const normalizedLanguage = normalizeLanguage(payload.language);
-
   const ext = EXT_MAP[normalizedLanguage] ?? "txt";
 
   const slug = payload.problem_slug
@@ -393,15 +394,8 @@ async function commitSolution(
 
   const mdPath = `solutions/${topic}/${slug}.md`;
 
-  const codeSHA = await getFileSHA(
-    settings.github_token,
-    settings.repo_full_name,
-    filePath,
-    settings.branch
-  );
-
+  // --- Build docs content ---
   let mdContent = generateMarkdown(payload, topic, filePath);
-  let mdSHA: string | null = null;
 
   if (payload.action === "version") {
     const mdFile = await getFileContent(
@@ -410,7 +404,6 @@ async function commitSolution(
       mdPath,
       settings.branch
     );
-
     if (mdFile?.content) {
       const date = safeDate(payload.timestamp);
       const decoded = decodeGitHubContent(mdFile.content);
@@ -430,77 +423,95 @@ async function commitSolution(
 
       const versionRow = `| v${version} | [${slug}_v${version}.${ext}](./${slug}_v${version}.${ext}) | ${date} |`;
       mdContent = appendVersionRow(patched, versionRow);
-      mdSHA = mdFile.sha;
     }
-  } else {
-    mdSHA = await getFileSHA(
-      settings.github_token,
-      settings.repo_full_name,
-      mdPath,
-      settings.branch
-    );
   }
 
+  // --- Build commit messages ---
   const topicLabel = topic;
   const approach = payload.notes?.split(" ").slice(0, 5).join(" ") ?? "";
-  const actionLabel = codeSHA && payload.action !== "version" ? "update" : "add";
-  const message =
-    payload.action === "version"
-      ? `[${topicLabel}] ${slug} · ${payload.language} · v${version}`
-      : settings.commit_message_style === "rich"
-        ? `[${topicLabel}] ${slug} · ${payload.language} · ${actionLabel}${
-            approach ? ` (${approach})` : ""
-          }`
-        : `Add ${slug}`;
-
-  const commitSHA = await putFile(
+  const codeSHA = await getFileSHA(
     settings.github_token,
     settings.repo_full_name,
     filePath,
-    payload.code,
-    message,
-    settings.branch,
-    codeSHA ?? undefined
+    settings.branch
+  );
+  const actionLabel = codeSHA && payload.action !== "version" ? "update" : "add";
+  const codeCommitMessage =
+    payload.action === "version"
+      ? `[${topicLabel}] ${slug} · ${payload.language} · v${version}`
+      : settings.commit_message_style === "rich"
+        ? `[${topicLabel}] ${slug} · ${payload.language} · ${actionLabel}${approach ? ` (${approach})` : ""}`
+        : `Add ${slug}`;
+
+  const docsCommitMessage = `docs: ${slug} explanation`;
+
+  // --- Fetch and update stats ---
+  const { stats } = await fetchStats(
+    settings.github_token,
+    settings.repo_full_name,
+    settings.branch
   );
 
-  let markdownCommitted = false;
+  // We use a placeholder commit SHA for stats; it gets replaced with the real one after commit 1
+  const tempCommitSha = "pending";
+  const updatedStats = updateStats(stats, payload, topic, tempCommitSha);
+  const statsContent = JSON.stringify(updatedStats, null, 2);
+
+  // --- COMMIT 1: solution code + stats.json ---
+  console.info("AlgoNest: starting commit 1 (code + stats)", filePath);
+  const commitSha = await commitMultipleFiles(
+    settings.github_token,
+    settings.repo_full_name,
+    settings.branch,
+    [
+      { path: filePath, content: payload.code },
+      { path: "stats/stats.json", content: statsContent }
+    ],
+    codeCommitMessage
+  );
+  console.info("AlgoNest: commit 1 succeeded", commitSha);
+
+  // Cache stats locally for popup display (upstream feature)
+  await setStorage({ cached_stats: updatedStats });
+
+  // Patch the commit_sha in stats log now that we have the real SHA
+  updatedStats.solve_log[0] = { ...updatedStats.solve_log[0], commit_sha: commitSha };
+
+  // --- Build README using final stats ---
+  const readmeContent = generateREADME(updatedStats, settings.repo_full_name.split("/")[1]);
+
+  // --- COMMIT 2: markdown explanation + README ---
+  console.info("AlgoNest: starting commit 2 (docs + README)", mdPath);
   try {
-    await putFile(
+    const docsCommitSha = await commitMultipleFiles(
       settings.github_token,
       settings.repo_full_name,
-      mdPath,
-      mdContent,
-      `docs: ${slug} explanation`,
       settings.branch,
-      mdSHA ?? undefined
+      [
+        { path: mdPath, content: mdContent },
+        { path: "README.md", content: readmeContent }
+      ],
+      docsCommitMessage,
+      commitSha  // Use commit 1 SHA as parent since HEAD just moved
     );
-    markdownCommitted = true;
+    console.info("AlgoNest: commit 2 succeeded", docsCommitSha);
   } catch (err) {
-    console.warn("Markdown commit failed", err);
-  }
-
-  if (markdownCommitted) {
-    const { stats, sha } = await fetchStats(
-      settings.github_token,
-      settings.repo_full_name,
-      settings.branch
-    );
-    const updated = updateStats(stats, payload, topic, commitSHA);
-    await commitStats(
-      settings.github_token,
-      settings.repo_full_name,
-      settings.branch,
-      updated,
-      sha
-    );
-    await setStorage({ cached_stats: updated });
-
-    const readmeSHA = await getFileSHA(settings.github_token, settings.repo_full_name, "README.md", settings.branch);
-    const readmeContent = generateREADME(updated, settings.repo_full_name.split("/")[1]);
-    try {
-      await putFile(settings.github_token, settings.repo_full_name, "README.md", readmeContent,
-        "docs: update README", settings.branch, readmeSHA ?? undefined);
-    } catch(e) { console.warn("README commit failed", e); }
+    // Code is already committed — store docs for retry on next flush
+    console.error("AlgoNest: commit 2 failed", err);
+    if (isRetryableError(err)) {
+      const pendingDocs: PendingDocsPayload = {
+        mdPath,
+        mdContent,
+        readmeContent,
+        commitMessage: docsCommitMessage,
+        slug
+      };
+      await setStorage({ [STORAGE_KEYS.pendingDocs]: pendingDocs });
+      console.warn("AlgoNest: docs commit failed, stored for retry", err);
+    } else {
+      console.error("AlgoNest: docs commit failed (non-retryable), error details:",
+        err instanceof Error ? err.message : String(err));
+    }
   }
 
   await storeHash(slug, codeHash);
@@ -510,8 +521,8 @@ async function commitSolution(
     status: payload.action === "version" ? "versioned" : "committed",
     topic,
     file_path: filePath,
-    commit_sha: commitSHA,
-    commit_message: message,
+    commit_sha: commitSha,
+    commit_message: codeCommitMessage,
     version
   };
 }
@@ -583,6 +594,35 @@ async function enqueue(payload: SubmissionPayload): Promise<void> {
 
 async function flushQueue(): Promise<{ processed: number; remaining: number }> {
   const settings = await getSettings();
+
+  // --- Retry pending docs commit from a previous solve ---
+  const pendingDocs = await getFromStorage<PendingDocsPayload>(STORAGE_KEYS.pendingDocs);
+  if (pendingDocs) {
+    try {
+      await commitMultipleFiles(
+        settings.github_token,
+        settings.repo_full_name,
+        settings.branch,
+        [
+          { path: pendingDocs.mdPath, content: pendingDocs.mdContent },
+          { path: "README.md", content: pendingDocs.readmeContent }
+        ],
+        pendingDocs.commitMessage
+      );
+      await removeStorage(STORAGE_KEYS.pendingDocs);
+      console.info("AlgoNest: pending docs committed successfully", pendingDocs.slug);
+    } catch (err) {
+      if (err instanceof AuthError) {
+        await setStorage({ [STORAGE_KEYS.authError]: true });
+        console.warn("AlgoNest: pending docs retry failed — auth error");
+        return { processed: 0, remaining: (await getQueue())?.length ?? 0 };
+      }
+      // Leave pendingDocs in storage for the next flush if retryable
+      console.warn("AlgoNest: pending docs retry failed, will retry next flush", err);
+    }
+  }
+
+  // --- Process the submission queue ---
   const queue = (await getQueue()) ?? [];
   const nextQueue: QueuedSubmission[] = [];
   let processed = 0;

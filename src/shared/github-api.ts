@@ -290,3 +290,188 @@ export async function getAuthenticatedUser(
 
   return userSchema.parse(await res.json());
 }
+
+// ---------------------------------------------------------------------------
+// Git Trees API — used by commitMultipleFiles to create one commit per batch
+// ---------------------------------------------------------------------------
+
+const refSchema = z.object({
+  object: z.object({ sha: z.string() })
+});
+
+const gitCommitSchema = z.object({
+  sha: z.string(),
+  tree: z.object({ sha: z.string() })
+});
+
+const blobResponseSchema = z.object({ sha: z.string() });
+
+const treeResponseSchema = z.object({ sha: z.string() });
+
+const newCommitSchema = z.object({ sha: z.string() });
+
+/** Returns the SHA of the current HEAD commit for the given branch. */
+async function getLatestCommitSha(
+  token: string,
+  repoFullName: string,
+  branch: string
+): Promise<string> {
+  const res = await fetchWithRetry(
+    `${BASE_URL}/repos/${repoFullName}/git/ref/heads/${encodeURIComponent(branch)}`,
+    { method: "GET", headers: authHeaders(token) }
+  );
+  if (res.status === 401) throw new AuthError();
+  if (isRateLimitResponse(res)) throw new RateLimitError();
+  if (!res.ok) throw new Error(`GitHub get ref failed: ${res.status}`);
+  const json = refSchema.parse(await res.json());
+  return json.object.sha;
+}
+
+/** Returns the tree SHA for a given commit SHA. */
+async function getTreeSha(
+  token: string,
+  repoFullName: string,
+  commitSha: string
+): Promise<string> {
+  const res = await fetchWithRetry(
+    `${BASE_URL}/repos/${repoFullName}/git/commits/${commitSha}`,
+    { method: "GET", headers: authHeaders(token) }
+  );
+  if (res.status === 401) throw new AuthError();
+  if (isRateLimitResponse(res)) throw new RateLimitError();
+  if (!res.ok) throw new Error(`GitHub get commit failed: ${res.status}`);
+  const json = gitCommitSchema.parse(await res.json());
+  return json.tree.sha;
+}
+
+/** Uploads file content as a blob and returns its SHA. */
+async function createBlob(
+  token: string,
+  repoFullName: string,
+  content: string
+): Promise<string> {
+  const res = await fetchWithRetry(
+    `${BASE_URL}/repos/${repoFullName}/git/blobs`,
+    {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ content: encodeContent(content), encoding: "base64" })
+    }
+  );
+  if (res.status === 401) throw new AuthError();
+  if (isRateLimitResponse(res)) throw new RateLimitError();
+  if (!res.ok) throw new Error(`GitHub create blob failed: ${res.status}`);
+  const json = blobResponseSchema.parse(await res.json());
+  return json.sha;
+}
+
+/** Creates a new tree containing the given files on top of an existing base tree. */
+async function createTree(
+  token: string,
+  repoFullName: string,
+  baseTreeSha: string,
+  files: Array<{ path: string; blobSha: string }>
+): Promise<string> {
+  const tree = files.map(({ path, blobSha }) => ({
+    path,
+    mode: "100644",
+    type: "blob",
+    sha: blobSha
+  }));
+  const res = await fetchWithRetry(
+    `${BASE_URL}/repos/${repoFullName}/git/trees`,
+    {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ base_tree: baseTreeSha, tree })
+    }
+  );
+  if (res.status === 401) throw new AuthError();
+  if (isRateLimitResponse(res)) throw new RateLimitError();
+  if (!res.ok) throw new Error(`GitHub create tree failed: ${res.status}`);
+  const json = treeResponseSchema.parse(await res.json());
+  return json.sha;
+}
+
+/** Creates a new commit pointing at the given tree with the given parent commit. */
+async function createGitCommit(
+  token: string,
+  repoFullName: string,
+  message: string,
+  treeSha: string,
+  parentSha: string
+): Promise<string> {
+  const res = await fetchWithRetry(
+    `${BASE_URL}/repos/${repoFullName}/git/commits`,
+    {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ message, tree: treeSha, parents: [parentSha] })
+    }
+  );
+  if (res.status === 401) throw new AuthError();
+  if (isRateLimitResponse(res)) throw new RateLimitError();
+  if (!res.ok) throw new Error(`GitHub create commit failed: ${res.status}`);
+  const json = newCommitSchema.parse(await res.json());
+  return json.sha;
+}
+
+/** Advances the branch ref to the new commit SHA. */
+async function updateRef(
+  token: string,
+  repoFullName: string,
+  branch: string,
+  commitSha: string
+): Promise<void> {
+  const res = await fetchWithRetry(
+    `${BASE_URL}/repos/${repoFullName}/git/refs/heads/${encodeURIComponent(branch)}`,
+    {
+      method: "PATCH",
+      headers: authHeaders(token),
+      body: JSON.stringify({ sha: commitSha, force: false })
+    }
+  );
+  if (res.status === 401) throw new AuthError();
+  if (isRateLimitResponse(res)) throw new RateLimitError();
+  if (!res.ok) throw new Error(`GitHub update ref failed: ${res.status}`);
+}
+
+/**
+ * Commits multiple files in a single GitHub commit using the Git Trees API.
+ * All files in `files` appear in one commit — no separate commit per file.
+ * Returns the new commit SHA.
+ * 
+ * @param parentCommitSha - Optional. If provided, use this as the parent instead of reading HEAD.
+ *                          Useful for sequential commits where HEAD has just moved.
+ */
+export async function commitMultipleFiles(
+  token: string,
+  repoFullName: string,
+  branch: string,
+  files: Array<{ path: string; content: string }>,
+  message: string,
+  parentCommitSha?: string
+): Promise<string> {
+  // 1. Get current HEAD commit SHA (or use provided parent)
+  const headSha = parentCommitSha ?? await getLatestCommitSha(token, repoFullName, branch);
+
+  // 2. Get the tree SHA from that commit (needed as base_tree)
+  const baseTreeSha = await getTreeSha(token, repoFullName, headSha);
+
+  // 3. Upload all file contents as blobs in parallel
+  const blobShas = await Promise.all(
+    files.map((f) => createBlob(token, repoFullName, f.content))
+  );
+
+  // 4. Create a new tree combining the base tree with the new blobs
+  const treeEntries = files.map((f, i) => ({ path: f.path, blobSha: blobShas[i] }));
+  const newTreeSha = await createTree(token, repoFullName, baseTreeSha, treeEntries);
+
+  // 5. Create the commit
+  const newCommitSha = await createGitCommit(token, repoFullName, message, newTreeSha, headSha);
+
+  // 6. Advance the branch ref
+  await updateRef(token, repoFullName, branch, newCommitSha);
+
+  return newCommitSha;
+}
