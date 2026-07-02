@@ -7,7 +7,6 @@ export function generateREADME(stats: StatsData, repoName: string): string {
   const mediumCount = stats.by_difficulty.Medium ?? 0;
   const hardCount = stats.by_difficulty.Hard ?? 0;
 
-  // Header and badges
   let readmeContent = `---
 # 🧩 ${repoName} — LeetCode Solutions
 
@@ -20,7 +19,6 @@ export function generateREADME(stats: StatsData, repoName: string): string {
 ---
 `;
 
-  // Progress by Topic
   readmeContent += `
 ## 📊 Progress by Topic
 
@@ -43,7 +41,6 @@ export function generateREADME(stats: StatsData, repoName: string): string {
     }
   }
 
-  // Difficulty Breakdown
   readmeContent += `
 ## 🎯 Difficulty Breakdown
 
@@ -54,7 +51,6 @@ export function generateREADME(stats: StatsData, repoName: string): string {
 | ![Hard](https://img.shields.io/badge/Hard-ff375f?style=flat-square) | ${hardCount} |
 `;
 
-  // Recently Solved
   readmeContent += `
 ## 🕐 Recently Solved
 
@@ -62,7 +58,7 @@ export function generateREADME(stats: StatsData, repoName: string): string {
 |---|---------|-------|------------|----------|------|
 `;
 
-  const recentSolves = stats.solve_log.slice(0, 10); // Last 10 submissions
+  const recentSolves = stats.solve_log.slice(0, 10); 
   if (recentSolves.length === 0) {
     readmeContent += `| — | — | — | — | — | — |
 `;
@@ -82,7 +78,6 @@ export function generateREADME(stats: StatsData, repoName: string): string {
     }
   }
 
-  // By Language
   readmeContent += `
 ## 🗂️ By Language
 
@@ -100,7 +95,6 @@ export function generateREADME(stats: StatsData, repoName: string): string {
     }
   }
 
-  // Footer
   const now = new Date();
   const utcDate = now.toISOString().split("T")[0];
   const utcTime = now.toISOString().split("T")[1].substring(0, 5);

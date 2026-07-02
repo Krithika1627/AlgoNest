@@ -5,16 +5,8 @@
 @tailwind utilities;
 
 :root {
-  --bg-0: #0b1020;
-  --bg-1: #10172b;
-  --bg-2: #1d2340;
-  --accent-1: #8be9fd;
-  --accent-2: #f4d06f;
-  --accent-3: #ff7ab6;
   --text-strong: #f8fafc;
   --text-muted: #a9b2c7;
-  --card: rgba(20, 26, 46, 0.75);
-  --border: rgba(148, 163, 184, 0.2);
 }
 
 * {
@@ -32,7 +24,7 @@ body {
   margin: 0;
   font-family: "Instrument Sans", system-ui, sans-serif;
   color: var(--text-strong);
-  background: radial-gradient(120% 120% at 20% 0%, #17203d 0%, #0b1020 55%, #05070e 100%);
+  background: #0d1117;
 }
 
 #root {
@@ -40,13 +32,7 @@ body {
   min-height: 100%;
 }
 
-.card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: 0 24px 60px rgba(6, 10, 28, 0.55);
-  backdrop-filter: blur(18px);
-}
+
 
 .text-muted {
   color: var(--text-muted);
@@ -70,7 +56,7 @@ body {
 
 .progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent-1), var(--accent-3));
+  background: #6366f1;
   animation: countdown linear forwards;
 }
 

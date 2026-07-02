@@ -57,7 +57,6 @@ export default function PopupV2({ pending, settings }: Props): JSX.Element {
 
   const topic = topicOverride ?? initialTopic;
 
-  // Check if this slug was solved before (exists in code_hashes)
   useEffect(() => {
     chrome.storage.local.get("code_hashes", (result: { code_hashes?: Record<string, string> }) => {
       const hashes = result.code_hashes ?? {};
@@ -174,13 +173,11 @@ export default function PopupV2({ pending, settings }: Props): JSX.Element {
     window.close();
   };
 
-  //MAIN POPUP CONTENT
   const diffStyle = DIFFICULTY_STYLES[pending.difficulty];
 
   return (
-    <div className="card fade-in flex flex-1 flex-col gap-4 p-4">
-      {/* Problem Title + Difficulty Badge */}
-      <div>
+    <div className="fade-in flex flex-1 flex-col gap-4 p-4">
+      <div className="rounded-xl bg-white/5 p-3">
         <div className="flex items-start justify-between gap-2">
           <div className="text-lg font-semibold">{pending.problem_title}</div>
           <span
@@ -194,13 +191,11 @@ export default function PopupV2({ pending, settings }: Props): JSX.Element {
           </span>
         </div>
 
-        {/* Classification Pill / Language */}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          {/* Clickable topic pill */}
           <div className="relative">
             <button
               onClick={() => setShowTopicDropdown((prev) => !prev)}
-              className="tag flex items-center gap-1 transition hover:border-white/40"
+              className="flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-xs uppercase tracking-wide text-slate-300 transition hover:border-white/30"
             >
               → {topic}
               <svg
@@ -216,7 +211,7 @@ export default function PopupV2({ pending, settings }: Props): JSX.Element {
             {showTopicDropdown && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowTopicDropdown(false)} />
-                <div className="absolute left-0 top-full z-20 mt-1 max-h-48 w-48 overflow-y-auto rounded-xl border border-white/10 bg-[#1d2340] p-1 shadow-2xl backdrop-blur-xl">
+                <div className="absolute left-0 top-full z-20 mt-1 max-h-48 w-48 overflow-y-auto rounded-xl border border-white/10 bg-[#0d1117] p-1 shadow-2xl">
                   {TOPICS.map((t) => (
                     <button
                       key={t}
@@ -234,12 +229,13 @@ export default function PopupV2({ pending, settings }: Props): JSX.Element {
               </>
             )}
           </div>
-          <span className="tag">{pending.language}</span>
+          <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs uppercase tracking-wide text-slate-300">
+            {pending.language}
+          </span>
         </div>
 
-        {/* Version Indicator */}
         {wasSolvedBefore && (
-          <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1 text-xs text-amber-200">
+          <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1 text-xs text-amber-300">
             <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
             </svg>
@@ -248,22 +244,22 @@ export default function PopupV2({ pending, settings }: Props): JSX.Element {
         )}
       </div>
 
-      {/* Notes textarea */}
       <textarea
         value={notes}
         onChange={(event) => setNotes(event.target.value)}
         placeholder="Notes / approach (optional)"
-        className="min-h-[120px] rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+        className="min-h-[120px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500"
       />
 
-      {/* Action buttons */}
       <div className="flex gap-2 text-xs">
         {(["overwrite", "version", "skip"] as const).map((value) => (
           <button
             key={value}
             onClick={() => setAction(value)}
             className={`flex-1 rounded-xl px-3 py-2 uppercase tracking-wide transition ${
-              action === value ? "bg-indigo-500 text-white" : "bg-white/5 text-slate-200"
+              action === value
+                ? "border border-indigo-500/50 bg-indigo-500/20 text-indigo-200"
+                : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
             }`}
           >
             {value === "overwrite" ? "Overwrite" : value === "version" ? "New version" : "Skip"}
@@ -271,7 +267,6 @@ export default function PopupV2({ pending, settings }: Props): JSX.Element {
         ))}
       </div>
 
-      {/* Save & Commit */}
       <button
         onClick={handleSave}
         className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white/90"
@@ -279,8 +274,7 @@ export default function PopupV2({ pending, settings }: Props): JSX.Element {
         Save & Commit
       </button>
 
-      {/* Skip link */}
-      <button onClick={handleSkip} className="text-xs text-slate-300 hover:text-slate-100">
+      <button onClick={handleSkip} className="text-xs text-slate-500 hover:text-slate-300">
         Skip
       </button>
     </div>

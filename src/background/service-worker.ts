@@ -493,8 +493,8 @@ async function commitSolution(
       updated,
       sha
     );
+    await setStorage({ cached_stats: updated });
 
-    // README AUTO-GENERATION
     const readmeSHA = await getFileSHA(settings.github_token, settings.repo_full_name, "README.md", settings.branch);
     const readmeContent = generateREADME(updated, settings.repo_full_name.split("/")[1]);
     try {

@@ -147,65 +147,73 @@ export default function SetupScreen(): JSX.Element {
   };
 
   return (
-    <div className="card fade-in flex flex-1 flex-col gap-4 p-4">
-      <div>
-        <h2 className="text-xl font-semibold">Connect your GitHub</h2>
-        <p className="text-sm text-slate-300">
+    <div className="fade-in flex flex-1 flex-col gap-4 p-4">
+      <div className="rounded-xl bg-white/5 p-3">
+        <h2 className="text-lg font-semibold">Connect your GitHub</h2>
+        <p className="mt-1 text-sm text-slate-400">
           AlgoNest runs fully in the extension. Paste a token to connect first.
         </p>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-        <div className="text-sm font-medium">OAuth (disabled for now)</div>
-        <p className="text-xs text-slate-300">
+      <div className="rounded-xl bg-white/5 p-3">
+        <label className="text-[11px] font-medium uppercase tracking-[0.04em] text-slate-400">
+          OAuth (disabled for now)
+        </label>
+        <p className="mt-1 text-xs text-slate-400">
           OAuth exchange needs a tiny proxy. Click to capture the code.
         </p>
         <button
           disabled
-          className="mt-3 cursor-not-allowed rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-400"
+          className="mt-3 w-full cursor-not-allowed rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-500"
         >
           Connect GitHub
         </button>
       </div>
 
-      <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3">
-        <div className="text-sm font-medium text-emerald-100">Developer option</div>
-        <p className="text-xs text-emerald-100/80">
-          Paste a Personal Access Token with repo + user:email scopes.
+      <div className="rounded-xl bg-white/5 p-3">
+        <label className="text-[11px] font-medium uppercase tracking-[0.04em] text-slate-400">
+          Personal Access Token
+        </label>
+        <p className="mt-1 text-xs text-slate-400">
+          Paste a PAT with <code className="text-slate-300">repo</code> and{" "}
+          <code className="text-slate-300">user:email</code> scopes.
         </p>
         <input
           value={tokenInput}
           onChange={(event) => setTokenInput(event.target.value)}
           placeholder="ghp_..."
-          className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+          className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500"
         />
         <button
           onClick={handleManualToken}
-          className="mt-3 w-full rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950"
+          className="mt-2 w-full rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white/90"
         >
           Save token
         </button>
       </div>
 
       {hasToken && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+        <div className="rounded-xl bg-white/5 p-3">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 overflow-hidden rounded-xl border border-white/10 bg-white/10">
+            <div className="h-10 w-10 overflow-hidden rounded-full">
               {user?.avatar_url ? (
                 <img src={user.avatar_url} alt={user.login} className="h-full w-full object-cover" />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs text-slate-300">
-                  GH
+                <div className="flex h-full w-full items-center justify-center rounded-full bg-slate-600 text-sm font-medium text-white">
+                  {(user?.login ?? "GH").slice(0, 2).toUpperCase()}
                 </div>
               )}
             </div>
             <div>
               <div className="text-sm font-semibold">{user?.login ?? "GitHub"}</div>
-              <div className="text-xs text-slate-300">Token connected</div>
+              <div className="text-xs text-slate-400">Token connected</div>
             </div>
           </div>
-          <div className="mt-3">
-            <label className="text-xs uppercase text-slate-400">Repository</label>
+
+          <div className="mt-3 flex flex-col gap-2">
+            <label className="text-[11px] font-medium uppercase tracking-[0.04em] text-slate-400">
+              Repository
+            </label>
             <input
               value={repoInput}
               onChange={(event) => {
@@ -213,40 +221,42 @@ export default function SetupScreen(): JSX.Element {
                 setNeedsCreate(false);
               }}
               placeholder="username/leetcode-solutions"
-              className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500"
             />
-            <div className="mt-3 flex gap-2">
+            <div className="mt-1 flex gap-2">
               <button
                 onClick={connectRepo}
                 disabled={!repoReady}
-                className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold ${
+                className={`flex-1 rounded-xl px-3 py-2 text-sm font-medium transition ${
                   repoReady
-                    ? "border border-white/20 bg-white/5"
-                    : "cursor-not-allowed border border-white/10 bg-white/5 text-slate-400"
+                    ? "border border-white/20 bg-white/5 text-slate-200 hover:bg-white/10"
+                    : "cursor-not-allowed border border-white/10 bg-white/5 text-slate-500"
                 }`}
               >
                 Connect repo
               </button>
               <button
                 onClick={createRepoFromInput}
-                className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold ${
+                disabled={!repoReady}
+                className={`flex-1 rounded-xl px-3 py-2 text-sm font-medium transition ${
                   repoReady
-                    ? "bg-indigo-400/80 text-slate-900"
-                    : "cursor-not-allowed bg-white/5 text-slate-400"
+                    ? "border border-indigo-500/40 bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20"
+                    : "cursor-not-allowed border border-white/10 bg-white/5 text-slate-500"
                 }`}
               >
                 Create repo
               </button>
             </div>
             {needsCreate && (
-              <div className="mt-2 text-xs text-amber-200">
+              <div className="text-xs text-amber-400">
                 Repo not found. Create it to continue.
               </div>
             )}
           </div>
+
           <button
             onClick={disconnectAccount}
-            className="mt-4 w-full rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-100"
+            className="mt-4 w-full rounded-xl border border-red-500/40 bg-transparent px-4 py-2 text-sm font-medium text-red-400 transition hover:bg-red-500/10"
           >
             Disconnect account
           </button>
