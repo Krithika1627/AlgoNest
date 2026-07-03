@@ -124,17 +124,17 @@ export function classifyTopic(
     overrideMap[normalizeTag(key)] = value;
   }
 
-  for (const tag of tags) {
-    const normalized = normalizeTag(tag);
-    if (overrideMap[normalized]) {
-      return overrideMap[normalized];
+  const normalizedTags = new Set(tags.map(normalizeTag));
+
+  for (const tag of normalizedTags) {
+    if (overrideMap[tag]) {
+      return overrideMap[tag];
     }
   }
 
-  for (const tag of tags) {
-    const normalized = normalizeTag(tag);
-    if (PRIORITY_TAGS.includes(normalized)) {
-      return TAG_MAP[normalized];
+  for (const priorityTag of PRIORITY_TAGS) {
+    if (normalizedTags.has(priorityTag)) {
+      return TAG_MAP[priorityTag];
     }
   }
 

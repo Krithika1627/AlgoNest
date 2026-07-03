@@ -127,3 +127,76 @@ ${versionsTable}
 ---
 `;
 }
+
+function appendVersionRow(markdown: string, row: string): string {
+  if (markdown.includes(row)) {
+    return markdown;
+  }
+
+  const lines = markdown.split("\n");
+  const headerIndex = lines.findIndex((line) => line.trim() === "## Versions");
+  if (headerIndex === -1) {
+    return `${markdown.trimEnd()}\n\n## Versions\n| Version | File | Date |\n|---------|------|------|\n${row}\n`;
+  }
+
+  let tableStart = -1;
+  for (let i = headerIndex + 1; i < lines.length; i += 1) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith("## ")) {
+      break;
+    }
+    if (trimmed.startsWith("|")) {
+      tableStart = i;
+      break;
+    }
+  }
+
+  if (tableStart === -1) {
+    const insertAt = headerIndex + 1;
+    const tableBlock = [
+      "| Version | File | Date |",
+      "|---------|------|------|",
+      row
+    ];
+    lines.splice(insertAt, 0, ...tableBlock);
+    return lines.join("\n");
+  }
+
+  let insertAt = tableStart + 1;
+  for (let i = tableStart + 1; i < lines.length; i += 1) {
+    if (!lines[i].trim().startsWith("|")) {
+      insertAt = i;
+      break;
+    }
+    insertAt = i + 1;
+  }
+
+  lines.splice(insertAt, 0, row);
+  return lines.join("\n");
+}
+
+export function patchMarkdownForVersion(
+  existingContent: string,
+  payload: SubmissionPayload,
+  slug: string,
+  ext: string,
+  version: number,
+  date: string
+): string {
+  let patched = existingContent;
+
+  if (payload.notes?.trim()) {
+    const runtime = payload.runtime_ms > 0 ? ` · ${payload.runtime_ms} ms` : "";
+    const memory = payload.memory_mb > 0 ? ` · ${payload.memory_mb} MB` : "";
+    const versionNote = `\n\n**v${version} (${date}):** ${payload.notes.trim()}${runtime}${memory}`;
+    const approachIndex = patched.indexOf("## Approach");
+    if (approachIndex !== -1) {
+      const nextSection = patched.indexOf("\n## ", approachIndex + 11);
+      const insertPoint = nextSection !== -1 ? nextSection : patched.length;
+      patched = patched.slice(0, insertPoint) + versionNote + patched.slice(insertPoint);
+    }
+  }
+
+  const versionRow = `| v${version} | [${slug}_v${version}.${ext}](./${slug}_v${version}.${ext}) | ${date} |`;
+  return appendVersionRow(patched, versionRow);
+}
