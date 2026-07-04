@@ -10,6 +10,10 @@ import {
 } from "../../shared/github-api";
 import { usePopupStore } from "../store";
 import { sendMessage } from "../utils";
+import {
+  generateRandomString,
+  createCodeChallenge
+} from "../../shared/oauth";
 
 type UserInfo = { login: string; avatar_url: string };
 
@@ -55,26 +59,127 @@ export default function SetupScreen(): JSX.Element {
     setToast({ message: "Token saved. Connect a repo next.", type: "success" });
   };
 
-  const handleOAuth = () => {
-    const clientId = import.meta.env.VITE_GITHUB_OAUTH_CLIENT_ID as string | undefined;
-    if (!clientId || clientId === "your_client_id_here") {
-      setToast({ message: "Add your OAuth client ID in .env to use OAuth.", type: "error" });
+  const handleOAuth = async () => {
+    const clientId =
+      import.meta.env.VITE_GITHUB_OAUTH_CLIENT_ID as string | undefined;
+    const workerUrl =
+      import.meta.env.VITE_AUTH_WORKER_URL as string | undefined;
+    if (!clientId || !workerUrl) {
+      setToast({
+        message: "OAuth configuration missing.",
+        type: "error"
+      });
       return;
     }
-    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,user:email`;
-    chrome.identity.launchWebAuthFlow({ url, interactive: true }, (redirect) => {
-      if (chrome.runtime.lastError || !redirect) {
-        setToast({ message: "OAuth flow canceled.", type: "error" });
-        return;
-      }
-      const code = new URL(redirect).searchParams.get("code");
-      if (code) {
-        setToast({
-          message: "OAuth code captured. Paste a PAT for now to finish setup.",
-          type: "success"
-        });
-      }
+    const state = generateRandomString(16);
+    const codeVerifier = generateRandomString(32);
+    const codeChallenge = await createCodeChallenge(codeVerifier);
+    await chrome.storage.local.set({
+      oauth_state: state,
+      oauth_code_verifier: codeVerifier
     });
+    const redirectUri = chrome.identity.getRedirectURL();
+    const authUrl = new URL(
+      "https://github.com/login/oauth/authorize"
+    );
+    authUrl.search = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      scope: "repo",
+      state,
+      code_challenge: codeChallenge,
+      code_challenge_method: "S256"
+    }).toString();
+    chrome.identity.launchWebAuthFlow(
+      {
+        url: authUrl.toString(),
+        interactive: true
+      },
+      async (redirectUrl) => {
+        if (chrome.runtime.lastError || !redirectUrl) {
+          await chrome.storage.local.remove([
+            "oauth_state", "oauth_code_verifier"
+          ]);
+          setToast({
+            message: "OAuth cancelled.",
+            type: "error"
+          });
+          return;
+        }
+        const url = new URL(redirectUrl);
+        const code = url.searchParams.get("code");
+        const returnedState = url.searchParams.get("state");
+        const stored =
+          await chrome.storage.local.get([
+            "oauth_state", "oauth_code_verifier"
+          ]);
+        const storedState = stored.oauth_state as string | undefined;
+        const storedVerifier = stored.oauth_code_verifier as string | undefined;
+        if ( !returnedState || returnedState !== storedState ) {
+          await chrome.storage.local.remove([
+            "oauth_state", "oauth_code_verifier"
+          ]);
+          setToast({
+            message: "OAuth state mismatch.",
+            type: "error"
+          });
+          return;
+        }
+        if (!code || !storedVerifier) {
+          await chrome.storage.local.remove([
+            "oauth_state", "oauth_code_verifier"
+          ]);
+          setToast({
+            message: "Incomplete OAuth response.",
+            type: "error"
+          });
+          return;
+        }
+        try {
+          setLoading(true);
+          const res = await fetch(workerUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              code,
+              code_verifier: storedVerifier
+            })
+          });
+          const data = await res.json() as {
+            access_token?: string;
+            error?: string;
+          };
+          if (!res.ok || !data.access_token) {
+            setToast({
+              message:
+                data.error ?? "OAuth exchange failed.",
+              type: "error"
+            });
+            return;
+          }
+          const next = {
+            ...DEFAULT_SETTINGS,
+            ...baseSettings,
+            github_token: data.access_token
+          };
+          await saveSettings(next);
+          setToast({
+            message: "GitHub connected.", type: "success"
+          });
+        } catch {
+          setToast({
+            message: "OAuth exchange failed.", type: "error"
+          });
+        } finally {
+          await chrome.storage.local.remove([
+            "oauth_state", "oauth_code_verifier"
+          ]);
+          setLoading(false);
+        }
+      }
+    );
   };
 
   const connectRepo = async () => {
@@ -157,14 +262,14 @@ export default function SetupScreen(): JSX.Element {
 
       <div className="rounded-xl bg-white/5 p-3">
         <label className="text-[11px] font-medium uppercase tracking-[0.04em] text-slate-400">
-          OAuth (disabled for now)
+          Github OAuth
         </label>
         <p className="mt-1 text-xs text-slate-400">
-          OAuth exchange needs a tiny proxy. Click to capture the code.
+          Connect your GitHub account securely.
         </p>
         <button
-          disabled
-          className="mt-3 w-full cursor-not-allowed rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-500"
+          onClick={() => void handleOAuth()}
+          className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-500"
         >
           Connect GitHub
         </button>
