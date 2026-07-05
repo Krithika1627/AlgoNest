@@ -517,22 +517,18 @@ function setupMutationObserver(): void {
 
 function loadDebounceMs(): void {
   try {
-    chrome.storage.local.get(["settings"], (result) => {
-      const settings = result.settings as { debounce_ms?: number } | undefined;
-      if (settings?.debounce_ms) {
-        debounceMs = settings.debounce_ms;
-      }
-    });
+    chrome.runtime.sendMessage(
+      { type: "GET_CONTENT_CONFIG" },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          return;
+        }
 
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName !== "local" || !changes.settings?.newValue) {
-        return;
+        if (typeof response?.debounce_ms === "number") {
+          debounceMs = response.debounce_ms;
+        }
       }
-      const next = changes.settings.newValue as { debounce_ms?: number };
-      if (next.debounce_ms) {
-        debounceMs = next.debounce_ms;
-      }
-    });
+    );
   } catch {
     // ignore context invalidated
   }

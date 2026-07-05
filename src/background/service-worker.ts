@@ -18,6 +18,10 @@ import {
   putFile
 } from "../shared/github-api";
 
+void chrome.storage.local.setAccessLevel({
+  accessLevel: "TRUSTED_CONTEXTS"
+});
+
 const STORAGE_KEYS = {
   settings: "settings",
   pending: "pending_submission",
@@ -116,6 +120,21 @@ chrome.runtime.onMessage.addListener(
     }
     if (message.type === "PING") {
       sendResponse({ ok: true });
+      return true;
+    }
+    if (message.type === "GET_CONTENT_CONFIG") {
+      void getSettings()
+        .then((settings) => {
+          sendResponse({
+            debounce_ms: settings.debounce_ms
+          });
+        })
+        .catch(() => {
+          sendResponse({
+            debounce_ms: 3000
+          });
+        });
+
       return true;
     }
     return false;
