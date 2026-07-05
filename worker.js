@@ -42,24 +42,24 @@ export default {
         }
       );
     }
-    // const ip =
-    //   request.headers.get("CF-Connecting-IP")
-    //   ?? "unknown";
-    // const { success } =
-    //   await env.RATE_LIMITER.limit({
-    //     key: ip
-    //   });
-    // if (!success) {
-    //   return new Response(
-    //     JSON.stringify({
-    //       error: "Too many requests"
-    //     }),
-    //     {
-    //       status: 429,
-    //       headers: corsHeaders
-    //     }
-    //   );
-    // }
+    const ip =
+      request.headers.get("CF-Connecting-IP")
+      ?? "unknown";
+    const { success } =
+      await env.RATE_LIMITER.limit({
+        key: ip
+      });
+    if (!success) {
+      return new Response(
+        JSON.stringify({
+          error: "Too many requests"
+        }),
+        {
+          status: 429,
+          headers: corsHeaders
+        }
+      );
+    }
     let code;
     let code_verifier;
     try {
