@@ -8,7 +8,6 @@ export type StatsEntry = {
   difficulty: string;
   language: string;
   date: string;
-  commit_sha: string;
 };
 
 export type StatsData = {
@@ -81,7 +80,6 @@ export function updateStats(
   stats: StatsData,
   payload: SubmissionPayload,
   topic: string,
-  commitSha: string
 ): StatsData {
   const next: StatsData = {
     ...stats,
@@ -120,7 +118,6 @@ export function updateStats(
     difficulty: payload.difficulty,
     language: langKey,
     date: today,
-    commit_sha: commitSha
   });
   next.solve_log = next.solve_log.slice(0, 10);
 

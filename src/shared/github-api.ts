@@ -56,6 +56,29 @@ class RetryableResponseError extends Error {
   }
 }
 
+export class ConflictError extends Error {
+  constructor(message = "Git branch changed during commit") {
+    super(message);
+    this.name = "ConflictError";
+  }
+}
+
+function handleGitHubError(res: Response, operation: string): void {
+  if (res.status === 401) {
+    throw new AuthError();
+  }
+
+  if (isRateLimitResponse(res)) {
+    throw new RateLimitError();
+  }
+
+  if (!res.ok) {
+    throw new NetworkError(
+      `GitHub ${operation} failed: ${res.status}`
+    );
+  }
+}
+
 function authHeaders(token: string): HeadersInit {
   return {
     Authorization: `Bearer ${token}`,
@@ -289,4 +312,102 @@ export async function getAuthenticatedUser(
   }
 
   return userSchema.parse(await res.json());
+}
+
+export async function commitMultipleFiles(
+  token: string,
+  repoFullName: string,
+  branch: string,
+  files: Array<{ path: string; content: string }>,
+  message: string
+): Promise<string> {
+  const encodedBranch = encodeURIComponent(branch);
+
+  // 1-Get current branch tip
+  const refRes = await fetchWithRetry(
+    `${BASE_URL}/repos/${repoFullName}/git/ref/heads/${encodedBranch}`,
+    {
+      method: "GET",
+      headers: authHeaders(token)
+    }
+  );
+
+  handleGitHubError(refRes, "get branch ref");
+
+  const refData = (await refRes.json()) as {
+    object: {
+      sha: string;
+    };
+  };
+  const currentCommitSha = refData.object.sha;
+
+  // 2-Create a new tree containing all changed files
+  const treeRes = await fetchWithRetry(
+    `${BASE_URL}/repos/${repoFullName}/git/trees`,
+    {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        base_tree: currentCommitSha,
+
+        tree: files.map((file) => ({
+          path: file.path,
+          mode: "100644",
+          type: "blob",
+          content: file.content
+        }))
+      })
+    }
+  );
+
+  handleGitHubError(treeRes, "create tree");
+
+  const treeData = (await treeRes.json()) as {
+    sha: string;
+  };
+  const newTreeSha = treeData.sha;
+
+  // 3-Create one commit pointing to the new tree
+  const commitRes = await fetchWithRetry(
+    `${BASE_URL}/repos/${repoFullName}/git/commits`,
+    {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        message,
+        tree: newTreeSha,
+        parents: [currentCommitSha]
+      })
+    }
+  );
+
+  handleGitHubError(commitRes, "create commit");
+
+  const commitData = (await commitRes.json()) as {
+    sha: string;
+  };
+  const newCommitSha = commitData.sha;
+
+  //4-Move the branch to the new commit
+  const updateRefRes = await fetchWithRetry(
+    `${BASE_URL}/repos/${repoFullName}/git/refs/heads/${encodedBranch}`,
+    {
+      method: "PATCH",
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        sha: newCommitSha,
+        force: false
+      })
+    }
+  );
+
+  // Someone pushed to the branch after STEP 1.
+  // Never force-push over their changes.
+  if (updateRefRes.status === 422) {
+    throw new ConflictError();
+  }
+
+  handleGitHubError(updateRefRes, "update branch ref");
+
+  return newCommitSha;
 }

@@ -20,26 +20,26 @@ const mockPayload = (overrides = {}): SubmissionPayload => ({
 describe("updateStats", () => {
   it("increments total_solved", () => {
     const stats = defaultStats();
-    const updated = updateStats(stats, mockPayload(), "Arrays", "sha1");
+    const updated = updateStats(stats, mockPayload(), "Arrays");
     expect(updated.total_solved).toBe(1);
   });
 
   it("increments by_topic for the correct topic", () => {
     const stats = defaultStats();
-    const updated = updateStats(stats, mockPayload(), "Arrays", "sha1");
+    const updated = updateStats(stats, mockPayload(), "Arrays");
     expect(updated.by_topic["Arrays"]).toBe(1);
   });
 
   it("increments by_difficulty correctly", () => {
     const stats = defaultStats();
-    const updated = updateStats(stats, mockPayload({ difficulty: "Hard" }), "Graphs", "sha1");
+    const updated = updateStats(stats, mockPayload({ difficulty: "Hard" }), "Graphs");
     expect(updated.by_difficulty.Hard).toBe(1);
     expect(updated.by_difficulty.Easy).toBe(0);
   });
 
   it("sets streak to 1 on first solve", () => {
     const stats = defaultStats();
-    const updated = updateStats(stats, mockPayload(), "Arrays", "sha1");
+    const updated = updateStats(stats, mockPayload(), "Arrays");
     expect(updated.current_streak).toBe(1);
   });
 
@@ -48,7 +48,7 @@ describe("updateStats", () => {
     const today = new Date().toISOString().split("T")[0];
     stats.last_solved_date = today;
     stats.current_streak = 5;
-    const updated = updateStats(stats, mockPayload(), "Arrays", "sha1");
+    const updated = updateStats(stats, mockPayload(), "Arrays");
     expect(updated.current_streak).toBe(5);
   });
 
@@ -56,22 +56,22 @@ describe("updateStats", () => {
     const stats = defaultStats();
     stats.last_solved_date = "2020-01-01";
     stats.current_streak = 10;
-    const updated = updateStats(stats, mockPayload(), "Arrays", "sha1");
+    const updated = updateStats(stats, mockPayload(), "Arrays");
     expect(updated.current_streak).toBe(1);
   });
 
   it("keeps solve_log to max 10 entries", () => {
     let stats = defaultStats();
     for (let i = 0; i < 12; i++) {
-      stats = updateStats(stats, mockPayload({ problem_slug: `problem-${i}` }), "Arrays", "sha");
+      stats = updateStats(stats, mockPayload({ problem_slug: `problem-${i}` }), "Arrays");
     }
     expect(stats.solve_log.length).toBe(10);
   });
 
   it("puts newest solve first in solve_log", () => {
     let stats = defaultStats();
-    stats = updateStats(stats, mockPayload({ problem_slug: "first" }), "Arrays", "sha1");
-    stats = updateStats(stats, mockPayload({ problem_slug: "second" }), "Arrays", "sha2");
+    stats = updateStats(stats, mockPayload({ problem_slug: "first" }), "Arrays");
+    stats = updateStats(stats, mockPayload({ problem_slug: "second" }), "Arrays");
     expect(stats.solve_log[0].slug).toBe("second");
   });
 });

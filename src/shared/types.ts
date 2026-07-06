@@ -36,10 +36,10 @@ export interface CommitResult {
   status: "committed" | "queued" | "skipped" | "versioned" | "error";
   topic?: string;
   file_path?: string;
-  commit_sha?: string;
   commit_message?: string;
   version?: number;
   message?: string;
   showModal?: boolean;
   payload?: SubmissionPayload;
+  commit_sha?: string;
 }

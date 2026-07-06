@@ -15,7 +15,8 @@ import {
   RateLimitError,
   getFileContent,
   getFileSHA,
-  putFile
+  putFile,
+  commitMultipleFiles
 } from "../shared/github-api";
 
 void chrome.storage.local.setAccessLevel({
@@ -365,15 +366,7 @@ async function commitSolution(
 
   const mdPath = `solutions/${topic}/${slug}.md`;
 
-  const codeSHA = await getFileSHA(
-    settings.github_token,
-    settings.repo_full_name,
-    filePath,
-    settings.branch
-  );
-
   let mdContent = generateMarkdown(payload, topic, filePath);
-  let mdSHA: string | null = null;
 
   if (payload.action === "version") {
     const mdFile = await getFileContent(
@@ -388,78 +381,68 @@ async function commitSolution(
       const decoded = decodeGitHubContent(mdFile.content);
 
       mdContent = patchMarkdownForVersion(decoded, payload, slug, ext, version, date);
-      mdSHA = mdFile.sha;
     }
-  } else {
-    mdSHA = await getFileSHA(
-      settings.github_token,
-      settings.repo_full_name,
-      mdPath,
-      settings.branch
-    );
   }
 
   const topicLabel = topic;
   const approach = payload.notes?.split(" ").slice(0, 5).join(" ") ?? "";
-  const actionLabel = codeSHA && payload.action !== "version" ? "update" : "add";
   const message =
     payload.action === "version"
       ? `[${topicLabel}] ${slug} · ${payload.language} · v${version}`
       : settings.commit_message_style === "rich"
-        ? `[${topicLabel}] ${slug} · ${payload.language} · ${actionLabel}${
+        ? `[${topicLabel}] ${slug} · ${payload.language}${
             approach ? ` (${approach})` : ""
           }`
-        : `Add ${slug}`;
+        : `Solve ${slug}`;
 
-  const commitSHA = await putFile(
+  const { stats } = await fetchStats(
     settings.github_token,
     settings.repo_full_name,
-    filePath,
-    payload.code,
-    message,
-    settings.branch,
-    codeSHA ?? undefined
+    settings.branch
   );
 
-  let markdownCommitted = false;
-  try {
-    await putFile(
-      settings.github_token,
-      settings.repo_full_name,
-      mdPath,
-      mdContent,
-      `docs: ${slug} explanation`,
-      settings.branch,
-      mdSHA ?? undefined
-    );
-    markdownCommitted = true;
-  } catch (err) {
-    console.warn("Markdown commit failed", err);
-  }
+  const updatedStats = updateStats(
+    stats,
+    payload,
+    topic
+  );
 
-  if (markdownCommitted) {
-    const { stats, sha } = await fetchStats(
-      settings.github_token,
-      settings.repo_full_name,
-      settings.branch
-    );
-    const updated = updateStats(stats, payload, topic, commitSHA);
-    await commitStats(
-      settings.github_token,
-      settings.repo_full_name,
-      settings.branch,
-      updated,
-      sha
-    );
-    await setStorage({ cached_stats: updated });
+  const statsContent = JSON.stringify(updatedStats, null, 2);
 
-    const readmeSHA = await getFileSHA(settings.github_token, settings.repo_full_name, "README.md", settings.branch);
-    const readmeContent = generateREADME(updated, settings.repo_full_name.split("/")[1]);
-    try {
-      await putFile(settings.github_token, settings.repo_full_name, "README.md", readmeContent,
-        "docs: update README", settings.branch, readmeSHA ?? undefined);
-    } catch(e) { console.warn("README commit failed", e); }
-  }
+  const repoName =
+    settings.repo_full_name.split("/")[1];
+
+  const readmeContent = generateREADME(
+    updatedStats,
+    repoName
+  );
+    
+  const commitSHA = await commitMultipleFiles(
+    settings.github_token,
+    settings.repo_full_name,
+    settings.branch,
+    [
+      {
+        path: filePath,
+        content: payload.code
+      },
+      {
+        path: mdPath,
+        content: mdContent
+      },
+      {
+        path: "stats/stats.json",
+        content: statsContent
+      },
+      {
+        path: "README.md",
+        content: readmeContent
+      }
+    ],
+    message
+  );
+
+  await setStorage({ cached_stats: updatedStats });
 
   await storeHash(slug, codeHash);
   await markLastSubmission(payload);
@@ -468,8 +451,8 @@ async function commitSolution(
     status: payload.action === "version" ? "versioned" : "committed",
     topic,
     file_path: filePath,
-    commit_sha: commitSHA,
     commit_message: message,
+    commit_sha: commitSHA,
     version
   };
 }
