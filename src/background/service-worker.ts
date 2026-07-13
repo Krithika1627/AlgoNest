@@ -18,6 +18,11 @@ import {
   putFile,
   commitMultipleFiles
 } from "../shared/github-api";
+import {
+  analyzeComplexity,
+  getCachedComplexity,
+  cacheComplexity
+} from "../shared/complexity-api";
 
 void chrome.storage.local.setAccessLevel({
   accessLevel: "TRUSTED_CONTEXTS"
@@ -355,6 +360,41 @@ async function commitSolution(
     return { status: "skipped", topic };
   }
 
+  const COMPLEXITY_CACHE_VERSION = "v2";
+  const complexityCacheHash = await sha256(
+    `${COMPLEXITY_CACHE_VERSION}\0${payload.code}`
+  );
+
+  let complexity = null;
+
+  try {
+    complexity = await getCachedComplexity(complexityCacheHash);
+  } catch (err) {
+    console.warn("Complexity cache read failed", err);
+  }
+
+  if (!complexity) {
+    complexity = await analyzeComplexity({
+      code: payload.code,
+      language: payload.language,
+      problem_title: payload.problem_title,
+      problem_slug: payload.problem_slug
+    });
+
+    if (complexity) {
+      try {
+        await cacheComplexity(complexityCacheHash, complexity);
+      } catch (err) {
+        console.warn("Complexity cache write failed", err);
+      }
+    }
+  }
+
+  const payloadWithComplexity: SubmissionPayload = {
+    ...payload,
+    complexity: complexity ?? undefined
+  };
+
   let filePath = `solutions/${topic}/${slug}.${ext}`;
   let version = 1;
   if (payload.action === "version") {
@@ -366,7 +406,7 @@ async function commitSolution(
 
   const mdPath = `solutions/${topic}/${slug}.md`;
 
-  let mdContent = generateMarkdown(payload, topic, filePath);
+  let mdContent = generateMarkdown(payloadWithComplexity, topic, filePath);
 
   if (payload.action === "version") {
     const mdFile = await getFileContent(
@@ -380,7 +420,7 @@ async function commitSolution(
       const date = safeDate(payload.timestamp);
       const decoded = decodeGitHubContent(mdFile.content);
 
-      mdContent = patchMarkdownForVersion(decoded, payload, slug, ext, version, date);
+      mdContent = patchMarkdownForVersion(decoded, payloadWithComplexity, slug, ext, version, date);
     }
   }
 

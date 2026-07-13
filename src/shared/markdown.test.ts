@@ -76,3 +76,83 @@ describe("patchMarkdownForVersion", () => {
     expect(patched).toContain("class Solution:");
   });
 });
+
+it("renders complexity analysis when provided", () => {
+  const payload = mockPayload({
+    complexity: {
+      time_complexity: "O(n)",
+      space_complexity: "O(1)",
+      explanation: "The algorithm scans the input once."
+    }
+  });
+
+  const markdown = generateMarkdown(
+    payload,
+    "Arrays",
+    "solutions/Arrays/two-sum.cpp"
+  );
+
+  expect(markdown).toContain("- **Time:** O(n)");
+  expect(markdown).toContain("- **Space:** O(1)");
+  expect(markdown).toContain(
+    "The algorithm scans the input once."
+  );
+});
+
+it("uses complexity placeholders when analysis is unavailable", () => {
+  const markdown = generateMarkdown(
+    mockPayload(),
+    "Arrays",
+    "solutions/Arrays/two-sum.cpp"
+  );
+
+  expect(markdown).toContain(
+    "- **Time:** <!-- e.g. O(n) -->"
+  );
+
+  expect(markdown).toContain(
+    "- **Space:** <!-- e.g. O(1) -->"
+  );
+});
+it("renders zero runtime and memory", () => {
+  const md = generateMarkdown(
+    mockPayload({
+      runtime_ms: 0,
+      memory_mb: 0
+    }),
+    "Arrays",
+    "solutions/Arrays/two-sum.py"
+  );
+
+  expect(md).toContain("**Runtime:** 0 ms");
+  expect(md).toContain("**Memory:** 0 MB");
+});
+
+it("updates complexity when patching a version", () => {
+  const base = generateMarkdown(
+    mockPayload({
+      complexity: undefined
+    }),
+    "Arrays",
+    "solutions/Arrays/two-sum.py"
+  );
+
+  const patched = patchMarkdownForVersion(
+    base,
+    mockPayload({
+      complexity: {
+        time_complexity: "O(n)",
+        space_complexity: "O(1)",
+        explanation: "Scans the array once."
+      }
+    }),
+    "two-sum",
+    "py",
+    2,
+    "2026-07-13"
+  );
+
+  expect(patched).toContain("- **Time:** O(n)");
+  expect(patched).toContain("- **Space:** O(1)");
+  expect(patched).toContain("Scans the array once.");
+});

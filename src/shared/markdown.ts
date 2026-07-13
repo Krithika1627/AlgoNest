@@ -36,11 +36,10 @@ function extractVersion(filePath: string): number | null {
   return Number(match[1]);
 }
 
-function formatMetric(value: number, placeholder: string): string {
-  if (Number.isFinite(value) && value > 0) {
-    return String(value);
-  }
-  return `<!-- ${placeholder} -->`;
+function formatMetric(value: number): string {
+  return Number.isFinite(value)
+    ? String(value)
+    : "N/A";
 }
 
 function buildVersionsTable(
@@ -84,11 +83,15 @@ export function generateMarkdown(
   );
   const streakBadgePlaceholder = "<!-- streak badge placeholder -->";
 
-  const runtime = formatMetric(payload.runtime_ms, "runtime_ms");
-  const memory = formatMetric(payload.memory_mb, "memory_mb");
+  const runtime = formatMetric(payload.runtime_ms);
+  const memory = formatMetric(payload.memory_mb);
 
   const versionsTable = buildVersionsTable(slug, ext, filePath, date);
   const fence = "```";
+
+  const timeComplexity = payload.complexity?.time_complexity ?? "<!-- e.g. O(n) -->";
+  const spaceComplexity = payload.complexity?.space_complexity ?? "<!-- e.g. O(1) -->";
+  const complexityExplanation = payload.complexity?.explanation?.trim();
 
   return `---
 # ${payload.problem_title}
@@ -106,8 +109,9 @@ ${difficultyBadge}  ${topicBadge}  ${languageBadge}  ${streakBadgePlaceholder}
 ${approach}
 
 ## Complexity
-- **Time:** <!-- e.g. O(n) -->
-- **Space:** <!-- e.g. O(1) -->
+- **Time:** ${timeComplexity}
+- **Space:** ${spaceComplexity}
+${complexityExplanation ? `\n${complexityExplanation}` : ""}
 
 ## Solution
 
@@ -186,8 +190,8 @@ export function patchMarkdownForVersion(
   let patched = existingContent;
 
   if (payload.notes?.trim()) {
-    const runtime = payload.runtime_ms > 0 ? ` · ${payload.runtime_ms} ms` : "";
-    const memory = payload.memory_mb > 0 ? ` · ${payload.memory_mb} MB` : "";
+    const runtime = Number.isFinite(payload.runtime_ms) ? ` · ${payload.runtime_ms} ms` : "";
+    const memory = Number.isFinite(payload.memory_mb) ? ` · ${payload.memory_mb} MB` : "";
     const versionNote = `\n\n**v${version} (${date}):** ${payload.notes.trim()}${runtime}${memory}`;
     const approachIndex = patched.indexOf("## Approach");
     if (approachIndex !== -1) {
@@ -195,6 +199,20 @@ export function patchMarkdownForVersion(
       const insertPoint = nextSection !== -1 ? nextSection : patched.length;
       patched = patched.slice(0, insertPoint) + versionNote + patched.slice(insertPoint);
     }
+  }
+  if (payload.complexity) {
+    const explanation = payload.complexity.explanation?.trim();
+
+    const complexitySection = `## Complexity
+    - **Time:** ${payload.complexity.time_complexity}
+    - **Space:** ${payload.complexity.space_complexity}${
+      explanation ? `\n\n${explanation}` : ""
+    }`;
+
+    patched = patched.replace(
+      /## Complexity[\s\S]*?(?=\n## Solution)/,
+      `${complexitySection}\n`
+    );
   }
 
   const versionRow = `| v${version} | [${slug}_v${version}.${ext}](./${slug}_v${version}.${ext}) | ${date} |`;

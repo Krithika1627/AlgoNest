@@ -5,9 +5,17 @@ compatibility_date = "2026-07-04"
 [vars]
 EXTENSION_ID = "bbccdkeopnkkfleidompgfkecaenpkhf"
 GITHUB_REDIRECT_URI = "https://bbccdkeopnkkfleidompgfkecaenpkhf.chromiumapp.org/"
+GEMINI_MODEL = "gemini-3.1-flash-lite"
+GEMINI_FALLBACK_MODEL = "gemini-3.5-flash"
 
 [[unsafe.bindings]]
 name = "RATE_LIMITER"
 type = "ratelimit"
 namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+[[unsafe.bindings]]
+name = "AI_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1002"
 simple = { limit = 10, period = 60 }

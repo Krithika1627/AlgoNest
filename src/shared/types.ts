@@ -12,6 +12,7 @@ export interface SubmissionPayload {
   notes?: string;
   action: "overwrite" | "version" | "skip";
   topic_override?: string;
+  complexity?: ComplexityAnalysis;
 }
 
 export interface UserSettings {
@@ -42,4 +43,10 @@ export interface CommitResult {
   showModal?: boolean;
   payload?: SubmissionPayload;
   commit_sha?: string;
+}
+
+export interface ComplexityAnalysis {
+  time_complexity: string;
+  space_complexity: string;
+  explanation?: string;
 }
